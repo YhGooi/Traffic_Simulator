@@ -40,7 +40,7 @@ const speedText =
 function updateSpeedFromUI() {
   if (!speedSlider) return;
   const v = parseFloat(speedSlider.value);
-  Simulation.speed = clamp(isFinite(v) ? v : 1.0, 0.1, 20);
+  Simulation.speed = clamp(isFinite(v) ? v : 1.0, 0.1, 40);
   if (speedText) speedText.textContent = `${Simulation.speed.toFixed(2)}x`;
 }
 
@@ -79,7 +79,6 @@ const StatEls = {
   avgIdle: document.getElementById("statAvgIdleTime"),
   stopPct: document.getElementById("statStopPct"),
   avgSpeedNow: document.getElementById("statAvgSpeedNow"),
-  avgSpeedAll: document.getElementById("statAvgSpeedAll"),
   distance: document.getElementById("statTotalDistance"),
   co2Rate: document.getElementById("statCo2PerMin"),
   co2Total: document.getElementById("statCo2Total"),
@@ -118,32 +117,32 @@ function renderStats() {
   const simHr = (s.simTimeMs || 0) / 3600000;
 
   const totalDistKm = ((s.totalDistancePx || 0) / PX_PER_M) / 1000;
-  const avgSpeedAllKmh = simHr > 0 ? (totalDistKm / simHr) : 0;
 
-  const tickHr = (s.lastTickSimDeltaMs || 0) / 3600000;
-  const tickDistKm = ((s.lastTickDistancePx || 0) / PX_PER_M) / 1000;
-  const avgSpeedNowKmh = (tickHr > 0 && (s.carCount || 0) > 0) ? ((tickDistKm / tickHr) / s.carCount) : 0;
+  // Average per car overall: total distance divided by total vehicle-hours (includes idle time)
+  const totalVehicleHours = (((s.totalIdleMs || 0) + (s.totalMovingMs || 0)) / 3600000);
+  const avgSpeedPerCarKmh = totalVehicleHours > 0 ? (totalDistKm / totalVehicleHours) : 0;
 
   const totalMove = (s.totalIdleMs || 0) + (s.totalMovingMs || 0);
   const stopPct = totalMove > 0 ? ((s.totalIdleMs || 0) / totalMove) * 100 : 0;
 
-  const throughput = simMin > 0 ? (s.totalCompleted / simMin) : 0;
+  // current throughput provided by the world snapshot (completions last 1 minute scaled to trips/hour)
+  const throughput = s.currentThroughputPerHour || 0;
   const avgTripMs = s.totalCompleted > 0 ? (s.totalTripMs / s.totalCompleted) : 0;
   const avgIdleMs = s.totalCompleted > 0 ? (s.completedIdleMs / s.totalCompleted) : 0;
 
-  const co2Rate = (s.co2RateGPerMin || 0);
+  // CO₂ rate: total CO₂ emitted from start divided by total simulated minutes (g/min)
   const co2TotalG = (s.totalCo2G || 0);
+  const co2Rate = simMin > 0 ? (co2TotalG / simMin) : 0;
   const avgCo2TripG = s.totalCompleted > 0 ? (s.completedCo2G / s.totalCompleted) : 0;
 
   _setStat(StatEls.carCount, _fmtNumber(s.carCount || 0));
   _setStat(StatEls.spawned, _fmtNumber(s.totalSpawned || 0));
   _setStat(StatEls.completed, _fmtNumber(s.totalCompleted || 0));
-  _setStat(StatEls.throughput, `${_fmtNumber(throughput, 2)} / min`);
+  _setStat(StatEls.throughput, `${_fmtNumber(throughput, 0)}`);
   _setStat(StatEls.avgTrip, s.totalCompleted > 0 ? _fmtSec(avgTripMs) : "-");
   _setStat(StatEls.avgIdle, s.totalCompleted > 0 ? _fmtSec(avgIdleMs) : "-");
   _setStat(StatEls.stopPct, totalMove > 0 ? `${_fmtNumber(stopPct, 1)}%` : "-");
-  _setStat(StatEls.avgSpeedNow, `${_fmtNumber(avgSpeedNowKmh, 1)} km/h`);
-  _setStat(StatEls.avgSpeedAll, `${_fmtNumber(avgSpeedAllKmh, 1)} km/h`);
+  _setStat(StatEls.avgSpeedNow, `${_fmtNumber(avgSpeedPerCarKmh, 1)} km/h`);
   _setStat(StatEls.distance, `${_fmtNumber(totalDistKm, 3)} km`);
   _setStat(StatEls.co2Rate, `${_fmtNumber(co2Rate, 1)} g/min`);
   _setStat(StatEls.co2Total, `${_fmtNumber(co2TotalG, 0)} g (${_fmtNumber(co2TotalG / 1000, 2)} kg)`);
@@ -180,15 +179,27 @@ function loop(t) {
   Simulation.lastT = t;
 
   const speed = Simulation.speed || 1.0;
-  const simDeltaMs = clamp(realDeltaMs * speed, 0, 800);
-  const dt = clamp(simDeltaMs / 16.6667, 0, 6);
+  // scale simulated delta by speed (don't artificially cap here)
+  const simDeltaMs = realDeltaMs * speed;
+  const dt = simDeltaMs / 16.6667;
 
   if (Simulation.playing && world) {
     const spawnRatePerSec = 0.06 * 60; // old 0.06 per frame @ ~60fps
     const spawnProb = clamp(spawnRatePerSec * (simDeltaMs / 1000), 0, 0.5);
     if (Math.random() < spawnProb) world.spawnVehicleRandom();
 
-    world.update(dt, simDeltaMs);
+    // expose current simulation speed to the world (kept for compatibility)
+    if (world) world.simSpeed = Simulation.speed;
+
+    // Sub-step updates for stability: split large dt into smaller chunks (maxDt)
+    const maxDt = 6; // keep per-substep dt bounded for stability
+    const steps = Math.max(1, Math.ceil(dt / maxDt));
+    const subDt = dt / steps;
+    const subSimDeltaMs = simDeltaMs / steps;
+
+    for (let i = 0; i < steps; i++) {
+      world.update(subDt, subSimDeltaMs);
+    }
 
     Simulation.simTimeMs += simDeltaMs;
     renderSimTime();

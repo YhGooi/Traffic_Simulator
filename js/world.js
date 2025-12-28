@@ -2,7 +2,7 @@ import { GridGeometry } from "./geometry.js";
 import { Router } from "./router.js";
 import { Junction } from "./junction.js";
 import { Vehicle } from "./vehicle.js";
-import { keyRC, nowMs, DIRS, oppositeDir } from "./utils.js";
+import { keyRC, DIRS, oppositeDir } from "./utils.js";
 
 export class World {
   constructor({ cfg, ui, rows, cols, worldEl }) {
@@ -20,7 +20,9 @@ export class World {
 
     this._roadEls = new Map();
     this._cellEls = new Map();
+    // last spawn times: keep both real-time and sim-time if needed
     this._lastSpawn = 0;
+    this._lastSpawnSimMs = 0;
 
     // -------------------------
     // Stats / telemetry (NEW)
@@ -45,6 +47,9 @@ export class World {
       completedDistancePx: 0,
       completedIdleMs: 0,
       completedCo2G: 0,
+
+      // timestamps (simulation ms) of recent completions — used to compute current throughput
+      completionTimestamps: [],
 
       lastTickSimDeltaMs: 0,
       lastTickDistancePx: 0,
@@ -268,10 +273,12 @@ export class World {
     return { nodes, entryFrom, moves };
   }
 
-  spawnVehicleRandom() {
-    const t = nowMs();
-    if (t - this._lastSpawn < this.cfg.SPAWN_COOLDOWN_MS) return;
-    this._lastSpawn = t;
+  spawnVehicleRandom({ force = false } = {}) {
+    // use simulation time for programmatic spawns so spawn rate scales with sim speed
+    if (!force) {
+      if (this.simTimeMs - (this._lastSpawnSimMs || 0) < this.cfg.SPAWN_COOLDOWN_MS) return;
+    }
+    this._lastSpawnSimMs = this.simTimeMs;
 
     const route = this._buildRandomTurnRoute();
     if (!route) return;
@@ -368,6 +375,13 @@ export class World {
     const meta = this._vehMeta.get(v);
     this.stats.totalCompleted++;
 
+    // record completion timestamp (simulation time) for recent-throughput calculations
+    this.stats.completionTimestamps = this.stats.completionTimestamps || [];
+    this.stats.completionTimestamps.push(this.simTimeMs);
+
+    // debug: log completion recording
+    try { console.debug("[world] completion recorded", { simTimeMs: this.simTimeMs, totalCompleted: this.stats.totalCompleted, timestamps: this.stats.completionTimestamps.length }); } catch (e) {}
+
     if (!meta) return;
 
     const tripMs = Math.max(0, this.simTimeMs - (meta.spawnSimMs || 0));
@@ -379,9 +393,19 @@ export class World {
   }
 
   getStatsSnapshot() {
+    // Compute actual completed trips within the last hour (raw count)
+    const windowMs = 60 * 60 * 1000; // 1 hour
+    const now = this.simTimeMs || 0;
+    const completionsWindow = (this.stats.completionTimestamps || []).filter((t) => t > now - windowMs).length;
+    const currentThroughputPerHour = completionsWindow; // raw count of trips in the last hour
+
+    // debug: log snapshot throughput and timestamp count
+    try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
+
     return {
       simTimeMs: this.simTimeMs,
       carCount: this.vehicles.size,
+      currentThroughputPerHour,
       ...this.stats,
     };
   }
@@ -464,6 +488,13 @@ export class World {
     this.stats.lastTickDistancePx = tickDistPx;
     this.stats.lastTickCo2G = tickCo2G;
     this.stats.co2RateGPerMin = minutes > 0 ? (tickCo2G / minutes) : 0;
+
+    // prune old completion timestamps to keep memory bounded (keep last 60 minutes)
+    const retentionMs = 60 * 60000;
+    const cutoff = this.simTimeMs - retentionMs;
+    if (this.stats.completionTimestamps && this.stats.completionTimestamps.length > 0) {
+      this.stats.completionTimestamps = this.stats.completionTimestamps.filter(t => t >= cutoff);
+    }
 
     // -------------------------
     // Apply + cleanup (existing)

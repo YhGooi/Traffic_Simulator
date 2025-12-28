@@ -122,6 +122,7 @@ export class Vehicle {
 
     this._applyRotation(axis, sign);
 
+    // movement step uses dt (which already accounts for simulation speed)
     const step = this.cfg.CAR_SPEED * dt;
     let nx = this.x + (axis === "H" ? sign * step : 0);
     let ny = this.y + (axis === "V" ? sign * step : 0);
