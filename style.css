@@ -1,0 +1,211 @@
+* { box-sizing: border-box; }
+
+body {
+  font-family: Arial, sans-serif;
+  background: #e6e6e6;
+}
+
+.controls {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+.workspace {
+  width: 1200px;
+  height: 600px;
+  background: #ddd;
+  border: 1px solid #bbb;
+
+  /* Disable native scroll (we pan manually now) */
+  overflow: hidden;
+
+  position: relative;
+
+  /* Drag-pan UX */
+  cursor: grab;
+  user-select: none;
+
+  /* Important for pointer events (dragging) */
+  touch-action: none;
+}
+
+.workspace.panning {
+  cursor: grabbing;
+}
+
+/* The world canvas that we transform (pan/zoom) */
+#world {
+  position: relative;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+/* Grid cells */
+.gridCell {
+  position: absolute;
+  border: 1px dashed rgba(0,0,0,0.18);
+  z-index: 0;
+}
+
+.cellBtn {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  border-radius: 6px;
+  border: 1px solid #bbb;
+  background: rgba(255,255,255,0.85);
+  cursor: pointer;
+}
+
+.cellBtn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+/* Roads */
+.roadSeg {
+  position: absolute;
+  border-radius: 12px;
+  z-index: 1;
+  background: #5c5c5c;
+  box-shadow: inset 0 0 0 2px rgba(0,0,0,0.16);
+}
+
+.roadSeg.roadH {
+  background: linear-gradient(
+    to bottom,
+    #5c5c5c 0%,
+    #5c5c5c 48%,
+    #f3d000 48%,
+    #f3d000 52%,
+    #4f4f4f 52%,
+    #4f4f4f 100%
+  );
+}
+
+.roadSeg.roadV {
+  background: linear-gradient(
+    to right,
+    #5c5c5c 0%,
+    #5c5c5c 48%,
+    #f3d000 48%,
+    #f3d000 52%,
+    #4f4f4f 52%,
+    #4f4f4f 100%
+  );
+}
+
+/* ✅ Junction (ADJUSTED to align with stoplines)
+   Stoplines are drawn on the inner box (2px inset),
+   so we align the visual box to the same inner box. */
+.junction {
+  position: absolute;
+  transform: translate(2px, 2px);
+  width: 106px;
+  height: 106px;
+  background: #666;
+  border: 2px solid #444;
+  z-index: 5;
+}
+
+/* Stop line */
+.stop-line,
+.stopLine {
+  position: absolute;
+  width: 2px;
+  background: white;
+  z-index: 6;
+  opacity: 0.95;
+}
+
+/* Traffic light */
+.traffic-light,
+.tl {
+  position: absolute;
+  width: 22px;
+  background: #222;
+  padding: 3px;
+  border-radius: 5px;
+  z-index: 7;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.25);
+}
+
+/* Old light bulbs */
+.light {
+  width: 14px;
+  height: 14px;
+  margin: 3px auto;
+  border-radius: 50%;
+  background: #000;
+  opacity: 0.3;
+}
+
+.light.active { opacity: 1; }
+.red.active { background: red; }
+.yellow.active { background: yellow; }
+.green.active { background: green; }
+
+/* New bulbs */
+.bulb {
+  width: 14px;
+  height: 14px;
+  margin: 3px auto;
+  border-radius: 50%;
+  background: #000;
+  opacity: 0.25;
+}
+
+.bulb.on { opacity: 1; }
+
+.bulb.red.on    { background: #ff4a4a; }
+.bulb.yellow.on { background: #ffd34a; }
+.bulb.green.on  { background: #4aff7a; }
+
+/* Cars */
+.car {
+  position: absolute;
+  width: 36px;
+  height: 18px;
+  border-radius: 3px;
+  z-index: 20; /* car above junction */
+  background: #2196f3;
+  box-shadow: 0 2px 3px rgba(0,0,0,0.25);
+}
+
+.car.forward { background: #2196f3; }
+.car.reverse { background: #4dd0e1; }
+
+.car.h { background: #2196f3; }
+.car.v { background: #4dd0e1; }
+
+
+/* Stats */
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 10px;
+  margin: 10px 0 14px;
+}
+
+.statCard {
+  background: rgba(255,255,255,0.75);
+  border: 1px solid rgba(0,0,0,0.08);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+
+.statCard .k {
+  font-size: 12px;
+  color: #444;
+  margin-bottom: 6px;
+}
+
+.statCard .v {
+  font-size: 16px;
+  font-weight: 900;
+}

@@ -1,0 +1,140 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Traffic Network Grid Builder</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <h1 class="title">Traffic Network Grid Builder</h1>
+
+  <div class="controls">
+    <button id="playPause" class="btn">▶ Play</button>
+    <button id="spawnCarBtn" class="btn">+ Spawn Car</button>
+
+    <div class="pill">
+      <span class="pillLabel">Sim Time</span>
+      <span id="simTime" class="pillValue">00:00.0</span>
+    </div>
+
+    <div class="pill">
+      <span class="pillLabel">Speed</span>
+      <input type="range" id="speedSlider" min="0.25" max="4" step="0.05" value="1" />
+      <span id="speedValue" class="pillValue">1.00x</span>
+    </div>
+
+    <div class="pill">
+      <span class="pillLabel">Zoom</span>
+      <input type="range" id="zoomSlider" min="0.05" max="1.4" step="0.05" value="1" />
+    </div>
+
+    <div class="pill">
+      <span class="pillLabel">Grid</span>
+      <input id="rowsInput" class="num" type="number" min="1" max="10" value="2" />
+      <span class="muted">×</span>
+      <input id="colsInput" class="num" type="number" min="1" max="10" value="2" />
+      <button id="buildGridBtn" class="btn secondary">Build</button>
+    </div>
+  </div>
+
+  <!-- Stats -->
+   <div class="stats">  
+    <!-- Config constants used in stats -->
+    <div class="statCard">
+      <div class="k">PX / m</div>
+      <div class="v" id="statPxPerM">10</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">CO₂ / km</div>
+      <div class="v" id="statCo2PerKm">249 g/km</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Idle fuel</div>
+      <div class="v" id="statIdleGalPerHr">0.35 gal/hr</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">CO₂ / gal</div>
+      <div class="v" id="statCo2GPerGal">8887 g/gal</div>
+    </div>
+  </div>
+
+  <div class="stats">
+    <div class="statCard">
+      <div class="k">Cars in playground</div>
+      <div class="v" id="statCarCount">0</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Total spawned</div>
+      <div class="v" id="statTotalSpawned">0</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Completed trips</div>
+      <div class="v" id="statCompleted">0</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Throughput</div>
+      <div class="v" id="statThroughput">0.00 / min</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Avg trip time</div>
+      <div class="v" id="statAvgTripTime">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Avg idle time</div>
+      <div class="v" id="statAvgIdleTime">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Stopped time %</div>
+      <div class="v" id="statStopPct">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Avg speed (now)</div>
+      <div class="v" id="statAvgSpeedNow">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Avg speed (overall)</div>
+      <div class="v" id="statAvgSpeedAll">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Total distance</div>
+      <div class="v" id="statTotalDistance">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">CO₂ rate</div>
+      <div class="v" id="statCo2PerMin">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Total CO₂</div>
+      <div class="v" id="statCo2Total">-</div>
+    </div>
+
+    <div class="statCard">
+      <div class="k">Avg CO₂ / trip</div>
+      <div class="v" id="statAvgCo2Trip">-</div>
+    </div>
+  </div>
+
+  <!-- Playground -->
+  <div class="workspace">
+    <div id="world"></div>
+  </div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>
