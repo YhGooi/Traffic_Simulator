@@ -1,3 +1,9 @@
+/**
+ * Vehicle Module
+ * Represents a vehicle in the traffic simulation with position, speed, and waiting time tracking.
+ * Separates simulation state from UI rendering for research-grade analytics.
+ */
+
 import { oppositeDir } from "./utils.js";
 
 export class Vehicle {
@@ -5,26 +11,101 @@ export class Vehicle {
     this.cfg = cfg;
     this.ui = ui;
     this.world = world;
+    
+    // Generate unique ID for this vehicle
+    this.id = `v_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
 
     this.route = route; // { nodes[], entryFrom, moves[] }
     this.waypoints = this._buildWaypointsFromRoute(route);
     this.wpIdx = 0;
 
+    // Simulation state (position)
     this.x = this.waypoints[0].x;
     this.y = this.waypoints[0].y;
+    
+    // Simulation state (velocity and movement)
+    this.speed = 0; // current speed in px/frame
+    this.targetSpeed = cfg.CAR_SPEED;
+    
+    // Simulation state (waiting time tracking)
+    this.totalWaitingTime = 0; // accumulated waiting time in ms
+    this.lastUpdateTime = 0; // last update timestamp
+    this.isWaiting = false; // currently waiting flag
+    this.stoppedAtSignalTime = null; // timestamp when stopped at signal
 
-    this.el = ui.addDiv("car h", { left: `${this.x}px`, top: `${this.y}px` });
+    // UI element (can be null for headless simulation)
+    this.el = ui ? ui.addDiv("car h", { left: `${this.x}px`, top: `${this.y}px` }) : null;
 
     // Use rendered size so collision/stopline checks match the pixels on screen.
-    const w = this.el.offsetWidth || 0;
-    const h = this.el.offsetHeight || 0;
+    const w = this.el ? (this.el.offsetWidth || 0) : cfg.CAR_LEN;
+    const h = this.el ? (this.el.offsetHeight || 0) : cfg.CAR_LEN;
     this.len = Math.max(this.cfg.CAR_LEN, w, h);
 
     this.committedJunction = null;
     this.plan = null;
   }
 
-  destroy() { this.el.remove(); }
+  destroy() { 
+    if (this.el) this.el.remove(); 
+  }
+
+  /**
+   * Get current position
+   * @returns {{x: number, y: number}}
+   */
+  getPosition() {
+    return { x: this.x, y: this.y };
+  }
+
+  /**
+   * Get current speed (in px/frame or px/ms depending on usage)
+   * @returns {number}
+   */
+  getSpeed() {
+    return this.speed;
+  }
+
+  /**
+   * Get total waiting time accumulated (ms)
+   * @param {number} currentSimTime - Optional current simulation time to add current wait
+   * @returns {number} Total waiting time in milliseconds
+   */
+  getWaitingTime(currentSimTime) {
+    let total = this.totalWaitingTime;
+    
+    // If currently waiting, add the current waiting duration
+    if (this.isWaiting && this.stoppedAtSignalTime !== null && currentSimTime) {
+      total += (currentSimTime - this.stoppedAtSignalTime);
+    }
+    
+    return total;
+  }
+
+  /**
+   * Check if vehicle is currently stopped/waiting
+   * @returns {boolean}
+   */
+  isCurrentlyWaiting() {
+    return this.isWaiting;
+  }
+
+  /**
+   * Get programmatic state snapshot for analytics
+   * @param {number} currentSimTime - Current simulation time
+   * @returns {Object} Vehicle state
+   */
+  getState(currentSimTime) {
+    return {
+      position: this.getPosition(),
+      speed: this.getSpeed(),
+      waitingTime: this.getWaitingTime(currentSimTime),
+      isWaiting: this.isCurrentlyWaiting(),
+      waypointIndex: this.wpIdx,
+      totalWaypoints: this.waypoints.length,
+      routeCompleted: this.wpIdx >= this.waypoints.length - 1,
+      committedJunction: this.committedJunction
+    };
+  }
 
   _buildWaypointsFromRoute(route) {
     const { nodes, entryFrom, moves } = route;
@@ -96,6 +177,8 @@ export class Vehicle {
   }
 
   _applyRotation(axis, sign) {
+    if (!this.el) return; // Skip if no UI element
+    
     let deg = 0;
     if (axis === "H") deg = sign > 0 ? 0 : 180;
     else deg = sign > 0 ? 90 : 270;
@@ -124,6 +207,8 @@ export class Vehicle {
 
     // movement step uses dt (which already accounts for simulation speed)
     const step = this.cfg.CAR_SPEED * dt;
+    this.speed = this.cfg.CAR_SPEED; // Set current speed
+    
     let nx = this.x + (axis === "H" ? sign * step : 0);
     let ny = this.y + (axis === "V" ? sign * step : 0);
 
@@ -144,6 +229,7 @@ export class Vehicle {
           if (wouldCross) {
             nx = sign > 0 ? (stop - this.len) : stop;
             blockedAtStop = true;
+            this.speed = 0; // Vehicle is stopped
           }
         } else {
           const front = sign > 0 ? (ny + this.len) : ny;
@@ -151,6 +237,7 @@ export class Vehicle {
           if (wouldCross) {
             ny = sign > 0 ? (stop - this.len) : stop;
             blockedAtStop = true;
+            this.speed = 0; // Vehicle is stopped
           }
         }
       }
@@ -189,6 +276,24 @@ export class Vehicle {
 
     const { axis, sign, p1, blockedAtStop, blockedByLeader } = this.plan;
 
+    // Update waiting state tracking
+    const wasMoving = (Math.abs(this.plan.nx - this.x) > 0.001) || (Math.abs(this.plan.ny - this.y) > 0.001);
+    const isBlocked = blockedAtStop || blockedByLeader;
+    
+    if (isBlocked && !this.isWaiting) {
+      // Just started waiting
+      this.isWaiting = true;
+      this.stoppedAtSignalTime = this.world.simTimeMs || 0;
+    } else if (!isBlocked && this.isWaiting) {
+      // Just stopped waiting, accumulate the waiting time
+      if (this.stoppedAtSignalTime !== null) {
+        const currentTime = this.world.simTimeMs || 0;
+        this.totalWaitingTime += (currentTime - this.stoppedAtSignalTime);
+      }
+      this.isWaiting = false;
+      this.stoppedAtSignalTime = null;
+    }
+
     this.x = this.plan.nx;
     this.y = this.plan.ny;
 
@@ -201,7 +306,10 @@ export class Vehicle {
       }
     }
 
-    this.el.style.left = `${Math.round(this.x)}px`;
-    this.el.style.top = `${Math.round(this.y)}px`;
+    // Update UI only if element exists
+    if (this.el) {
+      this.el.style.left = `${Math.round(this.x)}px`;
+      this.el.style.top = `${Math.round(this.y)}px`;
+    }
   }
 }

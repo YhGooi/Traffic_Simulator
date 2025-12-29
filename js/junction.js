@@ -1,5 +1,12 @@
+/**
+ * Junction (Intersection) Module
+ * Represents a traffic intersection with lanes and signal control.
+ * Part of the Traffic Analytics and Signal Control layers.
+ */
+
 import { keyRC } from "./utils.js";
 import { SignalController } from "./signal.js";
+import { Lane } from "./lane.js";
 
 export class Junction {
   constructor({ cfg, ui, geom, r, c }) {
@@ -12,10 +19,11 @@ export class Junction {
 
     this.box = this.geom.junctionBoxAt(r, c);
 
-    this.el = ui.addDiv("junction", {
+    // Only create UI elements if ui is provided
+    this.el = ui ? ui.addDiv("junction", {
       left: `${this.box.left}px`,
       top: `${this.box.top}px`,
-    });
+    }) : null;
 
     this.stopLines = this._createStopLines();
     this.lights = this._createLights();
@@ -25,18 +33,22 @@ export class Junction {
     this.exits = { N: false, S: false, E: false, W: false };
     this.exitButtons = this._createExitButtons();
 
+    // Initialize traffic signal controller
     this.signal = new SignalController(cfg);
     this.signal.onChange(() => this._renderLights());
     this.signal.start();
     this._renderLights();
+    
+    // Initialize lanes for each approach direction
+    this.lanes = this._initializeLanes();
   }
 
   destroy() {
     this.signal.stop();
-    this.el.remove();
-    Object.values(this.stopLines).forEach(el => el.remove());
-    Object.values(this.lights).forEach(el => el.remove());
-    Object.values(this.exitButtons || {}).forEach(btn => btn.remove());
+    if (this.el) this.el.remove();
+    Object.values(this.stopLines).forEach(el => el && el.remove());
+    Object.values(this.lights).forEach(el => el && el.remove());
+    Object.values(this.exitButtons || {}).forEach(btn => btn && btn.remove());
   }
 
   center() { return { x: this.box.cx, y: this.box.cy }; }
@@ -77,6 +89,8 @@ export class Junction {
   }
 
   _createStopLines() {
+    if (!this.ui) return { N: null, S: null, E: null, W: null };
+    
     const b = this.box;
     const t = this.cfg.STOPLINE_THICK;
 
@@ -109,6 +123,7 @@ export class Junction {
   }
 
   _mkTrafficLight(x, y) {
+    if (!this.ui) return null;
     const el = this.ui.addDiv("tl", { left: `${x}px`, top: `${y}px` });
     el.innerHTML = `
       <div class="bulb red"></div>
@@ -119,6 +134,8 @@ export class Junction {
   }
 
   _createLights() {
+    if (!this.ui) return { N: null, S: null, E: null, W: null };
+    
     const b = this.box;
     return {
       N: this._mkTrafficLight(b.cx - 10, b.innerTop - 40),
@@ -138,6 +155,8 @@ export class Junction {
   }
 
   _mkExitBtn(left, top, dir) {
+    if (!this.ui) return null;
+    
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = "Exit";
@@ -160,6 +179,8 @@ export class Junction {
   }
 
   _createExitButtons() {
+    if (!this.ui) return { N: null, S: null, E: null, W: null };
+    
     const b = this.box;
     // Place buttons near the outgoing lane side of the junction.
     // These are absolute in world coordinates (same as stop lines & lights).
@@ -184,6 +205,7 @@ export class Junction {
   }
 
   _setLight(el, color) {
+    if (!el) return;
     const bulbs = el.querySelectorAll(".bulb");
     bulbs.forEach(b => b.classList.remove("on"));
     if (color === "RED") bulbs[0].classList.add("on");
@@ -192,6 +214,8 @@ export class Junction {
   }
 
   _renderLights() {
+    if (!this.ui) return;
+    
     const p = this.signal.phase;
     const ew = p === "EW_GREEN" ? "GREEN" : (p === "EW_YELLOW" ? "YELLOW" : "RED");
     const ns = p === "NS_GREEN" ? "GREEN" : (p === "NS_YELLOW" ? "YELLOW" : "RED");
@@ -202,5 +226,131 @@ export class Junction {
     this._setLight(this.lights.S, ns);
 
     this._renderExitButtons();
+  }
+
+  /**
+   * Initialize lanes for each approach direction
+   * @private
+   * @returns {Object} Map of direction to Lane objects
+   */
+  _initializeLanes() {
+    const lanes = {};
+    const o = this._laneOffset();
+    const b = this.box;
+    
+    // West approach (eastbound lane)
+    const westEntry = this.lanePointForApproach("W");
+    const westExit = this.lanePointForExit("E");
+    lanes.W = new Lane({
+      id: `${this.id}_W`,
+      axis: "H",
+      sign: +1,
+      laneCoord: b.cy - o,
+      entryPoint: westEntry,
+      exitPoint: westExit,
+      capacity: 10
+    });
+    
+    // East approach (westbound lane)
+    const eastEntry = this.lanePointForApproach("E");
+    const eastExit = this.lanePointForExit("W");
+    lanes.E = new Lane({
+      id: `${this.id}_E`,
+      axis: "H",
+      sign: -1,
+      laneCoord: b.cy + o,
+      entryPoint: eastEntry,
+      exitPoint: eastExit,
+      capacity: 10
+    });
+    
+    // North approach (southbound lane)
+    const northEntry = this.lanePointForApproach("N");
+    const northExit = this.lanePointForExit("S");
+    lanes.N = new Lane({
+      id: `${this.id}_N`,
+      axis: "V",
+      sign: +1,
+      laneCoord: b.cx + o,
+      entryPoint: northEntry,
+      exitPoint: northExit,
+      capacity: 10
+    });
+    
+    // South approach (northbound lane)
+    const southEntry = this.lanePointForApproach("S");
+    const southExit = this.lanePointForExit("N");
+    lanes.S = new Lane({
+      id: `${this.id}_S`,
+      axis: "V",
+      sign: -1,
+      laneCoord: b.cx - o,
+      entryPoint: southEntry,
+      exitPoint: southExit,
+      capacity: 10
+    });
+    
+    return lanes;
+  }
+
+  /**
+   * Get all lanes at this intersection
+   * @returns {Object} Map of direction to Lane
+   */
+  getLanes() {
+    return this.lanes;
+  }
+
+  /**
+   * Get lane for specific approach direction
+   * @param {string} direction - 'N', 'S', 'E', 'W'
+   * @returns {Lane|null}
+   */
+  getLane(direction) {
+    return this.lanes[direction] || null;
+  }
+
+  /**
+   * Get programmatic state snapshot for monitoring and analytics
+   * @param {number} currentSimTime - Current simulation time
+   * @returns {Object} Intersection state
+   */
+  getState(currentSimTime) {
+    const laneStates = {};
+    for (const [dir, lane] of Object.entries(this.lanes)) {
+      laneStates[dir] = lane.getState(currentSimTime);
+    }
+    
+    return {
+      id: this.id,
+      position: { r: this.r, c: this.c },
+      signalState: this.signal.getStateSnapshot(),
+      lanes: laneStates,
+      exits: { ...this.exits },
+      totalVehicles: Object.values(this.lanes).reduce((sum, lane) => sum + lane.getQueueLength(), 0)
+    };
+  }
+
+  /**
+   * Get aggregated metrics for this intersection
+   * @returns {Object} Intersection metrics
+   */
+  getMetrics() {
+    let totalVehicles = 0;
+    let totalCapacity = 0;
+    let avgOccupancy = 0;
+    
+    for (const lane of Object.values(this.lanes)) {
+      totalVehicles += lane.getQueueLength();
+      totalCapacity += lane.capacity;
+      avgOccupancy += lane.getOccupancyRate();
+    }
+    
+    return {
+      totalVehicles,
+      totalCapacity,
+      averageOccupancyRate: avgOccupancy / 4, // 4 lanes
+      utilizationRate: totalCapacity > 0 ? totalVehicles / totalCapacity : 0
+    };
   }
 }

@@ -1,20 +1,39 @@
+/**
+ * World Module
+ * Coordinates between simulation engine and UI rendering.
+ * Part of the layered architecture coordinating all components.
+ */
+
 import { GridGeometry } from "./geometry.js";
 import { Router } from "./router.js";
 import { Junction } from "./junction.js";
 import { Vehicle } from "./vehicle.js";
 import { keyRC, DIRS, oppositeDir } from "./utils.js";
+import { SimulationEngine } from "./simulationEngine.js";
+import { DataIngestionService } from "./sensor.js";
+import { TrafficAnalyzer } from "./analytics.js";
+import { OptimizationEngine } from "./optimization.js";
+import { CFG } from "./config.js";
 
 export class World {
-  constructor({ cfg, ui, rows, cols, worldEl }) {
-    this.cfg = cfg;
-    this.ui = ui;
-    this.rows = rows;
-    this.cols = cols;
-    this.worldEl = worldEl;
+  constructor({ cfg, ui, rows, cols, worldEl, gridSize, roadLength } = {}) {
+    // Support simplified constructor for demos: { gridSize: 2 }
+    if (gridSize !== undefined) {
+      rows = gridSize;
+      cols = gridSize;
+    }
+    
+    // Use default CFG if not provided
+    this.cfg = cfg || CFG;
+    this.ui = ui || null;
+    this.rows = rows || 2;
+    this.cols = cols || 2;
+    this.worldEl = worldEl || null;
 
-    this.geom = new GridGeometry(cfg, rows, cols);
+    this.geom = new GridGeometry(this.cfg, this.rows, this.cols);
 
     this.junctions = new Map();
+    this.roads = new Map(); // Added for evaluation demos
     this.vehicles = new Set();
     this.router = new Router(this);
 
@@ -23,6 +42,19 @@ export class World {
     // last spawn times: keep both real-time and sim-time if needed
     this._lastSpawn = 0;
     this._lastSpawnSimMs = 0;
+
+    // Initialize simulation engine
+    this.simulationEngine = new SimulationEngine({ config: this.cfg });
+    this.simulationEngine.initialize(this.junctions, this.vehicles);
+
+    // Initialize data ingestion service (sensing layer)
+    this.dataIngestionService = null; // Created on demand
+
+    // Initialize traffic analyzer (analytics layer)
+    this.trafficAnalyzer = null; // Created on demand
+
+    // Initialize optimization engine (optimization layer)
+    this.optimizationEngine = null; // Created on demand
 
     // -------------------------
     // Stats / telemetry (NEW)
@@ -61,6 +93,21 @@ export class World {
   }
 
   destroy() {
+    // Stop optimization if running
+    if (this.optimizationEngine) {
+      this.optimizationEngine.stop();
+    }
+    
+    // Stop analytics if running
+    if (this.trafficAnalyzer) {
+      this.trafficAnalyzer.stop();
+    }
+    
+    // Stop data ingestion if running
+    if (this.dataIngestionService) {
+      this.dataIngestionService.stop();
+    }
+    
     for (const j of this.junctions.values()) j.destroy();
     for (const v of this.vehicles) v.destroy();
     for (const el of this._roadEls.values()) el.remove();
@@ -68,12 +115,31 @@ export class World {
 
     this.junctions.clear();
     this.vehicles.clear();
+    this.roads.clear();
     this._roadEls.clear();
     this._cellEls.clear();
     this._vehMeta = new WeakMap();
   }
 
+  /**
+   * Start the world - creates grid of junctions automatically
+   * Used by demos that don't have UI
+   */
+  start() {
+    // If no UI, auto-create all junctions in grid
+    if (!this.ui) {
+      for (let r = 0; r < this.rows; r++) {
+        for (let c = 0; c < this.cols; c++) {
+          this.addJunction(r, c);
+        }
+      }
+    }
+  }
+
   _buildGridUI() {
+    // Skip UI building if no worldEl (headless mode for demos)
+    if (!this.worldEl || !this.ui) return;
+    
     const { w, h } = this.geom.worldSize();
     this.worldEl.style.width = `${w}px`;
     this.worldEl.style.height = `${h}px`;
@@ -148,7 +214,22 @@ export class World {
     const isH = Math.abs(a.x - b.x) > Math.abs(a.y - b.y);
 
     const roadKey = `${idA}<->${idB}`;
+    
+    // Store road reference for demos
+    const roadData = {
+      id: roadKey,
+      from: idA,
+      to: idB,
+      horizontal: isH,
+      start: a,
+      end: b
+    };
+    this.roads.set(roadKey, roadData);
+    
     const thickness = this.cfg.ROAD_THICK;
+
+    // Only create visual elements if UI exists
+    if (!this.ui) return;
 
     if (isH) {
       const left = Math.min(a.x, b.x) - (this.cfg.CELL_W / 2) + 80;
@@ -303,69 +384,11 @@ export class World {
     this._vehMeta.delete(v);
   }
 
-  _applyNoOverlapPerLane() {
-    // Group by the actual lane centerline so cars don't overlap even across different segments.
-    const groups = new Map();
-    const snap = 2;
-
-    for (const v of this.vehicles) {
-      if (!v.plan || v.plan.done) continue;
-      const { axis, sign, laneCoord } = v.plan;
-      const snapped = Math.round(laneCoord / snap) * snap;
-      const k = `${axis}|${sign}|${snapped}`;
-      if (!groups.has(k)) groups.set(k, []);
-      groups.get(k).push(v);
-    }
-
-    for (const arr of groups.values()) {
-      if (arr.length <= 1) continue;
-
-      const axis = arr[0].plan.axis;
-      const sign = arr[0].plan.sign;
-
-      // sort leader -> follower
-      arr.sort((a, b) => {
-        const pa = axis === "H" ? a.plan.nx : a.plan.ny;
-        const pb = axis === "H" ? b.plan.nx : b.plan.ny;
-        return sign > 0 ? (pb - pa) : (pa - pb);
-      });
-
-      for (let i = 1; i < arr.length; i++) {
-        const lead = arr[i - 1];
-        const fol = arr[i];
-        const gap = this.cfg.CAR_GAP;
-
-        if (axis === "H") {
-          const original = fol.plan.nx;
-          if (sign > 0) {
-            const maxX = lead.plan.nx - gap - fol.len;
-            fol.plan.nx = Math.min(fol.plan.nx, maxX);
-            fol.plan.nx = Math.max(fol.plan.nx, fol.x);
-          } else {
-            const minX = lead.plan.nx + lead.len + gap;
-            fol.plan.nx = Math.max(fol.plan.nx, minX);
-            fol.plan.nx = Math.min(fol.plan.nx, fol.x);
-          }
-          if (Math.abs(fol.plan.nx - original) > 0.001) fol.plan.blockedByLeader = true;
-        } else {
-          const original = fol.plan.ny;
-          if (sign > 0) {
-            const maxY = lead.plan.ny - gap - fol.len;
-            fol.plan.ny = Math.min(fol.plan.ny, maxY);
-            fol.plan.ny = Math.max(fol.plan.ny, fol.y);
-          } else {
-            const minY = lead.plan.ny + lead.len + gap;
-            fol.plan.ny = Math.max(fol.plan.ny, minY);
-            fol.plan.ny = Math.min(fol.plan.ny, fol.y);
-          }
-          if (Math.abs(fol.plan.ny - original) > 0.001) fol.plan.blockedByLeader = true;
-        }
-      }
-    }
-  }
-
+  // Note: _applyQueuing logic moved to SimulationEngine
+  // Kept here as a stub for backwards compatibility if needed
   _applyQueuing() {
-    this._applyNoOverlapPerLane();
+    // Now handled by simulationEngine.update()
+    // This method kept for potential custom extensions
   }
 
   // -------------------------
@@ -399,9 +422,6 @@ export class World {
     const completionsWindow = (this.stats.completionTimestamps || []).filter((t) => t > now - windowMs).length;
     const currentThroughputPerHour = completionsWindow; // raw count of trips in the last hour
 
-    // debug: log snapshot throughput and timestamp count
-    try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
-
     return {
       simTimeMs: this.simTimeMs,
       carCount: this.vehicles.size,
@@ -416,15 +436,19 @@ export class World {
 
     // track sim time
     this.simTimeMs += simDeltaMs;
+    
+    // Update simulation engine (core simulation logic)
+    this.simulationEngine.simTimeMs = this.simTimeMs;
+    this.simulationEngine.update(dt, simDeltaMs);
 
-    for (const j of this.junctions.values()) {
-      j.signal.update(simDeltaMs);
-    }
-
-    for (const v of this.vehicles) v.planStep(dt);
-
-    // no overlap
-    this._applyQueuing();
+    // The simulation engine handles:
+    // - Signal updates
+    // - Vehicle planning
+    // - Queuing logic
+    // - Movement application
+    
+    // World continues to handle telemetry and stats
+    // This maintains backwards compatibility while adding modular architecture
 
     // -------------------------
     // Telemetry tick (NEW)
@@ -497,17 +521,209 @@ export class World {
     }
 
     // -------------------------
-    // Apply + cleanup (existing)
+    // Cleanup completed vehicles (existing)
     // -------------------------
     const toRemove = [];
     for (const v of this.vehicles) {
       if (v.plan && v.plan.done) toRemove.push(v);
-      else v.applyStep();
     }
 
     // record completion stats BEFORE removal
     for (const v of toRemove) this._recordCompletion(v);
 
     toRemove.forEach((v) => this.removeVehicle(v));
+  }
+
+  /**
+   * Get programmatic state snapshot (delegates to simulation engine)
+   * @returns {Object} Complete simulation state
+   */
+  getSimulationState() {
+    return this.simulationEngine.getState();
+  }
+
+  // -------------------------
+  // Data Ingestion / Sensing Layer Methods
+  // -------------------------
+
+  /**
+   * Initialize and start data ingestion service
+   * @param {number} samplingIntervalMs - Sampling interval (default: 1000ms)
+   * @returns {DataIngestionService} The created service
+   */
+  startDataIngestion(samplingIntervalMs = 1000) {
+    if (this.dataIngestionService) {
+      console.warn('[World] Data ingestion service already exists');
+      return this.dataIngestionService;
+    }
+
+    this.dataIngestionService = new DataIngestionService({
+      world: this,
+      samplingIntervalMs: samplingIntervalMs
+    });
+
+    this.dataIngestionService.start();
+    console.log(`[World] Data ingestion started (interval: ${samplingIntervalMs}ms)`);
+
+    return this.dataIngestionService;
+  }
+
+  /**
+   * Stop data ingestion service
+   */
+  stopDataIngestion() {
+    if (!this.dataIngestionService) {
+      console.warn('[World] No data ingestion service to stop');
+      return;
+    }
+
+    this.dataIngestionService.stop();
+    console.log('[World] Data ingestion stopped');
+  }
+
+  /**
+   * Get data ingestion service (creates if doesn't exist)
+   * @param {number} samplingIntervalMs - Sampling interval if creating new
+   * @returns {DataIngestionService} The service instance
+   */
+  getDataIngestionService(samplingIntervalMs = 1000) {
+    if (!this.dataIngestionService) {
+      this.dataIngestionService = new DataIngestionService({
+        world: this,
+        samplingIntervalMs: samplingIntervalMs
+      });
+    }
+    return this.dataIngestionService;
+  }
+
+  // -------------------------
+  // Traffic Analytics Methods
+  // -------------------------
+
+  /**
+   * Start traffic analytics
+   * Automatically starts data ingestion if not already running
+   * @param {number} updateIntervalMs - Analysis update interval (default: 1000ms)
+   * @returns {TrafficAnalyzer} The created analyzer
+   */
+  startTrafficAnalytics(updateIntervalMs = 1000) {
+    if (this.trafficAnalyzer) {
+      console.warn('[World] Traffic analyzer already exists');
+      return this.trafficAnalyzer;
+    }
+
+    // Ensure data ingestion is running
+    const dataService = this.getDataIngestionService(updateIntervalMs);
+    if (!dataService.isRunning) {
+      dataService.start();
+    }
+
+    this.trafficAnalyzer = new TrafficAnalyzer({
+      dataIngestionService: dataService,
+      updateIntervalMs: updateIntervalMs
+    });
+
+    this.trafficAnalyzer.start();
+    console.log(`[World] Traffic analytics started (interval: ${updateIntervalMs}ms)`);
+
+    return this.trafficAnalyzer;
+  }
+
+  /**
+   * Stop traffic analytics
+   */
+  stopTrafficAnalytics() {
+    if (!this.trafficAnalyzer) {
+      console.warn('[World] No traffic analyzer to stop');
+      return;
+    }
+
+    this.trafficAnalyzer.stop();
+    console.log('[World] Traffic analytics stopped');
+  }
+
+  /**
+   * Get traffic analyzer (creates if doesn't exist)
+   * @param {number} updateIntervalMs - Update interval if creating new
+   * @returns {TrafficAnalyzer} The analyzer instance
+   */
+  getTrafficAnalyzer(updateIntervalMs = 1000) {
+    if (!this.trafficAnalyzer) {
+      const dataService = this.getDataIngestionService(updateIntervalMs);
+      this.trafficAnalyzer = new TrafficAnalyzer({
+        dataIngestionService: dataService,
+        updateIntervalMs: updateIntervalMs
+      });
+    }
+    return this.trafficAnalyzer;
+  }
+
+  // -------------------------
+  // Optimization Engine Methods
+  // -------------------------
+
+  /**
+   * Start optimization engine
+   * Automatically starts analytics and data ingestion if needed
+   * @param {string} strategy - Optimization strategy (ADAPTIVE, GREEDY, etc.)
+   * @param {number} intervalMs - Optimization interval (default: 5000ms)
+   * @returns {OptimizationEngine} The created engine
+   */
+  startOptimization(strategy = 'ADAPTIVE', intervalMs = 5000) {
+    if (this.optimizationEngine) {
+      console.warn('[World] Optimization engine already exists');
+      return this.optimizationEngine;
+    }
+
+    // Ensure analytics is running
+    const analyzer = this.getTrafficAnalyzer();
+    if (!analyzer.isRunning) {
+      analyzer.start();
+    }
+
+    this.optimizationEngine = new OptimizationEngine({
+      trafficAnalyzer: analyzer,
+      world: this,
+      strategy: strategy,
+      autoRun: false
+    });
+
+    this.optimizationEngine.optimizationIntervalMs = intervalMs;
+    this.optimizationEngine.start();
+    
+    console.log(`[World] Optimization started (strategy: ${strategy}, interval: ${intervalMs}ms)`);
+
+    return this.optimizationEngine;
+  }
+
+  /**
+   * Stop optimization engine
+   */
+  stopOptimization() {
+    if (!this.optimizationEngine) {
+      console.warn('[World] No optimization engine to stop');
+      return;
+    }
+
+    this.optimizationEngine.stop();
+    console.log('[World] Optimization stopped');
+  }
+
+  /**
+   * Get optimization engine (creates if doesn't exist)
+   * @param {string} strategy - Optimization strategy if creating new
+   * @returns {OptimizationEngine} The engine instance
+   */
+  getOptimizationEngine(strategy = 'ADAPTIVE') {
+    if (!this.optimizationEngine) {
+      const analyzer = this.getTrafficAnalyzer();
+      this.optimizationEngine = new OptimizationEngine({
+        trafficAnalyzer: analyzer,
+        world: this,
+        strategy: strategy,
+        autoRun: false
+      });
+    }
+    return this.optimizationEngine;
   }
 }
