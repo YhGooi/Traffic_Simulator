@@ -170,9 +170,48 @@ if (zoomSliderEl) {
 document.getElementById("buildGridBtn").onclick = buildGridFromInputs;
 document.getElementById("spawnCarBtn").onclick = () => world && world.spawnVehicleRandom();
 
+// Create dual simulation in app.js
+const worldBaseline = new World({ 
+  cfg: CFG, 
+  ui: new UI(document.getElementById('world-baseline')), 
+  rows: 2, 
+  cols: 2, 
+  worldEl: document.getElementById('world-baseline') 
+});
+
+const worldOptimized = new World({ 
+  cfg: CFG, 
+  ui: new UI(document.getElementById('world-optimized')), 
+  rows: 2, 
+  cols: 2, 
+  worldEl: document.getElementById('world-optimized') 
+});
+
+// Start optimization on the optimized world only
+worldOptimized.startOptimization('ADAPTIVE', 5000);
+
 buildGridFromInputs();
 renderSimTime();
 renderStats();
+
+// Update both in the animation loop
+function tick() {
+  const now = performance.now();
+  const dt = (now - Simulation.lastT) * Simulation.speed;
+  Simulation.lastT = now;
+  
+  if (Simulation.playing) {
+    worldBaseline.update(dt / 16.6667, dt);
+    worldOptimized.update(dt / 16.6667, dt);
+    
+    updateStats(worldBaseline, 'baseline');
+    updateStats(worldOptimized, 'optimized');
+  }
+  
+  requestAnimationFrame(tick);
+}
+
+requestAnimationFrame(tick);
 
 function loop(t) {
   const realDeltaMs = clamp(t - Simulation.lastT, 0, 250);

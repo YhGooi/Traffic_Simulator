@@ -1,0 +1,25 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Traffic Optimization Comparison</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <h1>Traffic Signal Optimization - Side-by-Side Comparison</h1>
+  
+  <div id="comparison-container"></div>
+
+  <script type="module">
+    import { ComparisonPlayground } from './js/comparisonDemo.js';
+    
+    const comparison = new ComparisonPlayground({
+      container: document.getElementById('comparison-container'),
+      gridSize: 2
+    });
+    
+    // Auto-start after a brief delay
+    setTimeout(() => comparison.start(), 500);
+  </script>
+</body>
+</html>

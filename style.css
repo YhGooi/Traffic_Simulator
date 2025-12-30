@@ -14,9 +14,9 @@ body {
 }
 
 .workspace {
-  width: 1200px;
-  height: 600px;
-  background: #ddd;
+  width: 100%;
+  height: 400px;
+  background: #e6e6e6;
   border: 1px solid #bbb;
 
   /* Disable native scroll (we pan manually now) */
@@ -208,4 +208,154 @@ body {
 .statCard .v {
   font-size: 16px;
   font-weight: 900;
+}
+
+/* Comparison Playground Styles */
+.comparison-header {
+  background: #f5f5f5;
+  padding: 15px;
+  margin-bottom: 20px;
+  border-radius: 8px;
+}
+
+.control-panel {
+  display: flex;
+  gap: 15px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.control-panel button {
+  padding: 8px 16px;
+  border-radius: 4px;
+  border: 1px solid #ccc;
+  background: white;
+  cursor: pointer;
+}
+
+.control-panel button:hover {
+  background: #e0e0e0;
+}
+
+.comparison-container {
+  display: flex;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.playground-side {
+  flex: 1;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 10px;
+  background: white;
+}
+
+.side-header {
+  text-align: center;
+  margin-bottom: 10px;
+}
+
+.side-header h3 {
+  margin: 0 0 5px 0;
+}
+
+.timing-info {
+  font-size: 12px;
+  color: #666;
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+}
+
+.workspace-container {
+  margin-bottom: 10px;
+}
+
+.workspace {
+  width: 100%;
+  height: 400px;
+  background: #e6e6e6;
+  border: 1px solid #bbb;
+  overflow: hidden;
+  position: relative;
+}
+
+.stats-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: #f9f9f9;
+  border-radius: 4px;
+  font-size: 14px;
+}
+
+.stat-item {
+  display: flex;
+  justify-content: space-between;
+}
+
+.comparison-metrics {
+  background: white;
+  border: 2px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+}
+
+.comparison-metrics h3 {
+  margin-top: 0;
+  text-align: center;
+}
+
+.metric-row {
+  display: grid;
+  grid-template-columns: 200px 100px 40px 100px 120px;
+  gap: 10px;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  align-items: center;
+}
+
+.metric-label {
+  font-weight: bold;
+}
+
+.baseline-val {
+  text-align: right;
+  color: #666;
+}
+
+.vs {
+  text-align: center;
+  color: #999;
+  font-size: 12px;
+}
+
+.optimized-val {
+  text-align: left;
+  color: #333;
+  font-weight: 500;
+}
+
+.improvement {
+  text-align: center;
+  font-weight: bold;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.improvement.positive {
+  background: #d4edda;
+  color: #155724;
+}
+
+.improvement.negative {
+  background: #f8d7da;
+  color: #721c24;
+}
+
+.improvement.neutral {
+  background: #e2e3e5;
+  color: #383d41;
 }

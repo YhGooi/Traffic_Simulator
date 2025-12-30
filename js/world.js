@@ -431,108 +431,127 @@ export class World {
   }
 
   update(dt, deltaMs) {
-    // Tick traffic lights using simulation time so Pause freezes signals.
-    const simDeltaMs = typeof deltaMs === "number" ? deltaMs : dt * 16.6667;
+  // Tick traffic lights using simulation time so Pause freezes signals.
+  const simDeltaMs = typeof deltaMs === "number" ? deltaMs : dt * 16.6667;
 
-    // track sim time
-    this.simTimeMs += simDeltaMs;
-    
-    // Update simulation engine (core simulation logic)
-    this.simulationEngine.simTimeMs = this.simTimeMs;
-    this.simulationEngine.update(dt, simDeltaMs);
+  // track sim time
+  this.simTimeMs += simDeltaMs;
 
-    // The simulation engine handles:
-    // - Signal updates
-    // - Vehicle planning
-    // - Queuing logic
-    // - Movement application
-    
-    // World continues to handle telemetry and stats
-    // This maintains backwards compatibility while adding modular architecture
+  // -------------------------
+  // Store previous positions BEFORE update
+  // -------------------------
+  const minutes = simDeltaMs / 60000;
+  
+  if (minutes > 0) {
+    for (const v of this.vehicles) {
+      if (!v.plan || v.plan.done) continue;
+      
+      let meta = this._vehMeta.get(v);
+      if (!meta) {
+        meta = { spawnSimMs: this.simTimeMs, distancePx: 0, idleMs: 0, movingMs: 0, co2G: 0 };
+        this._vehMeta.set(v, meta);
+      }
+      
+      // Store previous position for movement calculation
+      meta.prevX = v.x;
+      meta.prevY = v.y;
+    }
+  }
+  
+  // Update simulation engine (core simulation logic)
+  this.simulationEngine.simTimeMs = this.simTimeMs;
+  this.simulationEngine.update(dt, simDeltaMs);
 
-    // -------------------------
-    // Telemetry tick (NEW)
-    // -------------------------
-    const minutes = simDeltaMs / 60000;
+  // The simulation engine handles:
+  // - Signal updates
+  // - Vehicle planning
+  // - Queuing logic
+  // - Movement application
+  
+  // World continues to handle telemetry and stats
+  // This maintains backwards compatibility while adding modular architecture
 
-    // Use defaults if not present in config.js (so we don't need to change config.js)
-    const PX_PER_M = (typeof this.cfg.PX_PER_M === "number") ? this.cfg.PX_PER_M : 10;
-    const CO2_PER_KM = (typeof this.cfg.CO2_PER_KM === "number") ? this.cfg.CO2_PER_KM : 249;
-    const IDLE_GAL_PER_HR = (typeof this.cfg.IDLE_GAL_PER_HR === "number") ? this.cfg.IDLE_GAL_PER_HR : 0.35;
-    const CO2_G_PER_GAL = (typeof this.cfg.CO2_G_PER_GAL === "number") ? this.cfg.CO2_G_PER_GAL : 8887;
+  // -------------------------
+  // Telemetry tick (NEW) - Calculate AFTER update
+  // -------------------------
 
-    const idleGPerMin = (IDLE_GAL_PER_HR * CO2_G_PER_GAL) / 60;
+  // Use defaults if not present in config.js (so we don't need to change config.js)
+  const PX_PER_M = (typeof this.cfg.PX_PER_M === "number") ? this.cfg.PX_PER_M : 10;
+  const CO2_PER_KM = (typeof this.cfg.CO2_PER_KM === "number") ? this.cfg.CO2_PER_KM : 249;
+  const IDLE_GAL_PER_HR = (typeof this.cfg.IDLE_GAL_PER_HR === "number") ? this.cfg.IDLE_GAL_PER_HR : 0.35;
+  const CO2_G_PER_GAL = (typeof this.cfg.CO2_G_PER_GAL === "number") ? this.cfg.CO2_G_PER_GAL : 8887;
 
-    let tickCo2G = 0;
-    let tickDistPx = 0;
+  const idleGPerMin = (IDLE_GAL_PER_HR * CO2_G_PER_GAL) / 60;
 
-    if (minutes > 0) {
-      for (const v of this.vehicles) {
-        if (!v.plan || v.plan.done) continue;
+  let tickCo2G = 0;
+  let tickDistPx = 0;
 
-        let meta = this._vehMeta.get(v);
-        if (!meta) {
-          meta = { spawnSimMs: this.simTimeMs, distancePx: 0, idleMs: 0, movingMs: 0, co2G: 0 };
-          this._vehMeta.set(v, meta);
-        }
+  if (minutes > 0) {
+    for (const v of this.vehicles) {
+      if (!v.plan || v.plan.done) continue;
 
-        // use planned movement (after queuing/clamps) to count distance
-        const dx = (v.plan.nx ?? v.x) - v.x;
-        const dy = (v.plan.ny ?? v.y) - v.y;
-        const movedPx = Math.hypot(dx, dy);
+      let meta = this._vehMeta.get(v);
+      if (!meta) continue; // Should have been created above
 
-        if (movedPx < 0.01) {
-          meta.idleMs += simDeltaMs;
-          this.stats.totalIdleMs += simDeltaMs;
+      // Calculate actual movement (current position - previous position)
+      const dx = v.x - (meta.prevX ?? v.x);
+      const dy = v.y - (meta.prevY ?? v.y);
+      const movedPx = Math.hypot(dx, dy);
 
-          const g = idleGPerMin * minutes;
-          meta.co2G += g;
-          this.stats.totalCo2G += g;
-          tickCo2G += g;
-        } else {
-          meta.movingMs += simDeltaMs;
-          meta.distancePx += movedPx;
+      if (movedPx < 0.01) {
+        // Vehicle is idle/stopped
+        meta.idleMs += simDeltaMs;
+        this.stats.totalIdleMs += simDeltaMs;
 
-          this.stats.totalMovingMs += simDeltaMs;
-          this.stats.totalDistancePx += movedPx;
+        const g = idleGPerMin * minutes;
+        meta.co2G += g;
+        this.stats.totalCo2G += g;
+        tickCo2G += g;
+      } else {
+        // Vehicle is moving
+        meta.movingMs += simDeltaMs;
+        meta.distancePx += movedPx;
 
-          tickDistPx += movedPx;
+        this.stats.totalMovingMs += simDeltaMs;
+        this.stats.totalDistancePx += movedPx;
 
-          const distKm = (movedPx / PX_PER_M) / 1000;
-          const g = distKm * CO2_PER_KM;
+        tickDistPx += movedPx;
 
-          meta.co2G += g;
-          this.stats.totalCo2G += g;
-          tickCo2G += g;
-        }
+        const distKm = (movedPx / PX_PER_M) / 1000;
+        const g = distKm * CO2_PER_KM;
+
+        meta.co2G += g;
+        this.stats.totalCo2G += g;
+        tickCo2G += g;
       }
     }
-
-    this.stats.lastTickSimDeltaMs = simDeltaMs;
-    this.stats.lastTickDistancePx = tickDistPx;
-    this.stats.lastTickCo2G = tickCo2G;
-    this.stats.co2RateGPerMin = minutes > 0 ? (tickCo2G / minutes) : 0;
-
-    // prune old completion timestamps to keep memory bounded (keep last 60 minutes)
-    const retentionMs = 60 * 60000;
-    const cutoff = this.simTimeMs - retentionMs;
-    if (this.stats.completionTimestamps && this.stats.completionTimestamps.length > 0) {
-      this.stats.completionTimestamps = this.stats.completionTimestamps.filter(t => t >= cutoff);
-    }
-
-    // -------------------------
-    // Cleanup completed vehicles (existing)
-    // -------------------------
-    const toRemove = [];
-    for (const v of this.vehicles) {
-      if (v.plan && v.plan.done) toRemove.push(v);
-    }
-
-    // record completion stats BEFORE removal
-    for (const v of toRemove) this._recordCompletion(v);
-
-    toRemove.forEach((v) => this.removeVehicle(v));
   }
+
+  this.stats.lastTickSimDeltaMs = simDeltaMs;
+  this.stats.lastTickDistancePx = tickDistPx;
+  this.stats.lastTickCo2G = tickCo2G;
+  this.stats.co2RateGPerMin = minutes > 0 ? (tickCo2G / minutes) : 0;
+
+  // prune old completion timestamps to keep memory bounded (keep last 60 minutes)
+  const retentionMs = 60 * 60000;
+  const cutoff = this.simTimeMs - retentionMs;
+  if (this.stats.completionTimestamps && this.stats.completionTimestamps.length > 0) {
+    this.stats.completionTimestamps = this.stats.completionTimestamps.filter(t => t >= cutoff);
+  }
+
+  // -------------------------
+  // Cleanup completed vehicles (existing)
+  // -------------------------
+  const toRemove = [];
+  for (const v of this.vehicles) {
+    if (v.plan && v.plan.done) toRemove.push(v);
+  }
+
+  // record completion stats BEFORE removal
+  for (const v of toRemove) this._recordCompletion(v);
+
+  toRemove.forEach((v) => this.removeVehicle(v));
+}
 
   /**
    * Get programmatic state snapshot (delegates to simulation engine)
