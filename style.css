@@ -13,22 +13,24 @@ body {
   flex-wrap: wrap;
 }
 
+/* Workspace container arranges playgrounds side-by-side */
+.workspaces {
+  display: flex;
+  gap: 18px;
+  align-items: stretch;
+  margin-bottom: 20px;
+}
+
+/* Each workspace becomes half width and keeps existing behavior */
 .workspace {
-  width: 1200px;
+  flex: 1 1 0;
   height: 600px;
   background: #ddd;
   border: 1px solid #bbb;
-
-  /* Disable native scroll (we pan manually now) */
   overflow: hidden;
-
   position: relative;
-
-  /* Drag-pan UX */
   cursor: grab;
   user-select: none;
-
-  /* Important for pointer events (dragging) */
   touch-action: none;
 }
 
@@ -37,11 +39,15 @@ body {
 }
 
 /* The world canvas that we transform (pan/zoom) */
-#world {
+/* Ensure both world containers (IDs) behave the same */
+#world, #world2 {
   position: relative;
+  width: 100%;
+  height: 100%;
   transform-origin: 0 0;
   will-change: transform;
 }
+
 
 /* Grid cells */
 .gridCell {
@@ -185,18 +191,36 @@ body {
 
 
 /* Stats */
-.stats {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 10px;
-  margin: 10px 0 14px;
+
+/* Row that holds the three stats panels */
+.statsRow {
+  display: flex;
+  gap: 16px;
+  align-items: flex-start;
+  margin-bottom: 14px;
+  flex-wrap: nowrap;
 }
 
+/* Each stats panel: allow cards to wrap inside the panel */
+.stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 8px;
+  background: transparent;
+  border-radius: 6px;
+  flex: 1 1 0;
+  min-width: 220px;
+}
+
+/* Individual stat card sizing for side-by-side layout */
 .statCard {
-  background: rgba(255,255,255,0.75);
-  border: 1px solid rgba(0,0,0,0.08);
-  border-radius: 14px;
-  padding: 10px 12px;
+  flex: 0 0 170px; /* width for each card */
+  padding: 8px;
+  background: #fff;
+  border-radius: 6px;
+  border: 1px solid rgba(0,0,0,0.06);
+  box-shadow: 0 1px 1px rgba(0,0,0,0.03);
 }
 
 .statCard .k {
@@ -208,4 +232,16 @@ body {
 .statCard .v {
   font-size: 16px;
   font-weight: 900;
+}
+
+/* label/value style adjustments remain unchanged */
+.statCard .k { font-size: 12px; color: #333; margin-bottom: 6px; }
+.statCard .v { font-weight: 700; font-size: 14px; }
+
+/* small screens: stack vertically */
+@media (max-width: 1100px) {
+  .statsRow { flex-direction: column; }
+  .workspaces { flex-direction: column; }
+  .statCard { flex: 1 1 100%; }
+  .workspace { height: 420px; }
 }

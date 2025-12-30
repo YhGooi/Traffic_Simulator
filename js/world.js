@@ -380,7 +380,7 @@ export class World {
     this.stats.completionTimestamps.push(this.simTimeMs);
 
     // debug: log completion recording
-    try { console.debug("[world] completion recorded", { simTimeMs: this.simTimeMs, totalCompleted: this.stats.totalCompleted, timestamps: this.stats.completionTimestamps.length }); } catch (e) {}
+    //try { console.debug("[world] completion recorded", { simTimeMs: this.simTimeMs, totalCompleted: this.stats.totalCompleted, timestamps: this.stats.completionTimestamps.length }); } catch (e) {}
 
     if (!meta) return;
 
@@ -400,7 +400,7 @@ export class World {
     const currentThroughputPerHour = completionsWindow; // raw count of trips in the last hour
 
     // debug: log snapshot throughput and timestamp count
-    try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
+    //try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
 
     return {
       simTimeMs: this.simTimeMs,
