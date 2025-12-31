@@ -1,0 +1,26 @@
+@startuml
+title EnergyCostEvaluation - Energy-Aware Cost Assessment
+
+start
+
+:Receive candidate timing plan;
+:Receive current timing plan;
+
+:Estimate idle time cost;
+:Estimate stop-start energy cost;
+:Estimate signal switching cost;
+:Estimate delay penalty;
+
+:Compute total energy-aware cost\nfor current timing;
+:Compute total energy-aware cost\nfor candidate timing;
+
+if (Candidate cost < Current cost?) then (Yes)
+    :Accept optimized timing plan;
+    stop
+else (No)
+    :Reject optimized timing plan;
+    :Maintain current signal timing;
+    stop
+endif
+
+@enduml

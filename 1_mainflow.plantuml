@@ -1,0 +1,36 @@
+@startuml
+title Signal System Optimization - State Machine Diagram
+
+[*] --> Monitoring
+
+Monitoring : Monitoring traffic state
+Monitoring : Using current signal timing
+
+Monitoring --> EvaluateOptimization : Traffic state update
+
+EvaluateOptimization : Evaluate optimization trigger
+
+EvaluateOptimization --> MaintainTiming : Optimization not required
+EvaluateOptimization --> EnergyCostEvaluation : Optimization required
+
+MaintainTiming : Keep existing signal timing
+MaintainTiming --> Monitoring
+
+EnergyCostEvaluation : Evaluate energy-aware cost
+EnergyCostEvaluation --> OptimizeTiming
+
+OptimizeTiming : Generate optimized signal timing plan
+OptimizeTiming --> SafetyValidation
+
+SafetyValidation : Enforce safety & legal constraints
+
+SafetyValidation --> DeployTiming : Valid timing plan
+SafetyValidation --> MaintainTiming : Invalid timing plan
+
+DeployTiming : Apply timing plan to signal controller
+DeployTiming --> Feedback
+
+Feedback : Collect local performance metrics
+Feedback --> Monitoring
+
+@enduml
