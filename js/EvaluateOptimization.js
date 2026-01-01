@@ -244,3 +244,6 @@ class EvaluateOptimization {
 if (typeof module !== 'undefined' && module.exports) {
     module.exports = EvaluateOptimization;
 }
+
+// ES6 export
+export { EvaluateOptimization };

@@ -43,6 +43,20 @@
       <input id="junctionApiUrl" type="text" placeholder="/api/junction" value="/api/junction" />
       <button id="startJunctionSyncBtn" class="btn secondary">Start Sync</button>
     </div>
+
+    <div class="pill">
+      <span class="pillLabel">Optimization</span>
+      <button id="toggleOptimizationBtn" class="btn secondary">Enable (Right)</button>
+    </div>
+  </div>
+
+  <!-- Optimization Status Bar -->
+  <div id="optimizationStatus" class="optStatus" style="display: none;">
+    <span class="optLabel">🔄 Optimization:</span>
+    <span id="optStatusText">Waiting...</span>
+    <span class="optStat">Total: <span id="optTotal">0</span></span>
+    <span class="optStat">Success: <span id="optSuccess">0</span></span>
+    <span class="optStat">Saved: <span id="optSaved">0</span> g CO₂</span>
   </div>
 
   <!-- Stats panels: config, top playground, bottom playground (side-by-side) -->
@@ -68,10 +82,17 @@
         <div class="k">CO₂ / gal</div>
         <div class="v" id="statCo2GPerGal">8887 g/gal</div>
       </div>
+      
+      <!-- Traffic Light Info Panel -->
+      <div class="statCard trafficLightInfo" id="trafficLightInfo" style="display: none;">
+        <div class="k">🚦 Traffic Light Info</div>
+        <div class="v" id="tlInfoContent">Hover over a traffic light</div>
+      </div>
     </div>
 
-    <!-- Top playground stats -->
+    <!-- Left playground stats (Control) -->
     <div class="stats" id="statsTop">
+      <div class="statsHeader">📊 Control Playground</div>
       <div class="statCard">
         <div class="k">Cars in playground</div>
         <div class="v" id="statCarCount">0</div>
@@ -133,8 +154,9 @@
       </div>
     </div>
 
-    <!-- Bottom playground stats -->
+    <!-- Right playground stats (Optimized) -->
     <div class="stats" id="statsBottom">
+      <div class="statsHeader optimized">🚦 Optimized Playground</div>
       <div class="statCard">
         <div class="k">Cars in playground</div>
         <div class="v" id="statCarCount2">0</div>
@@ -197,13 +219,15 @@
     </div>
   </div>
 
-  <!-- Playgrounds: show top and bottom side-by-side -->
+  <!-- Playgrounds: show left (control) and right (optimized) side-by-side -->
   <div class="workspaces">
     <div class="workspace">
+      <div class="playgroundLabel">Control (No Optimization)</div>
       <div id="world"></div>
     </div>
 
     <div class="workspace">
+      <div class="playgroundLabel optimized">Optimized (Adaptive Signals)</div>
       <div id="world2"></div>
     </div>
   </div>

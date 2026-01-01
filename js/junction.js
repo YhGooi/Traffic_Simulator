@@ -2,13 +2,14 @@ import { keyRC } from "./utils.js";
 import { SignalController } from "./signal.js";
 
 export class Junction {
-  constructor({ cfg, ui, geom, r, c }) {
+  constructor({ cfg, ui, geom, r, c, mirrorJunction = null }) {
     this.cfg = cfg;
     this.ui = ui;
     this.geom = geom;
     this.r = r;
     this.c = c;
     this.id = keyRC(r, c);
+    this.mirrorJunction = mirrorJunction;
 
     this.box = this.geom.junctionBoxAt(r, c);
 
@@ -108,23 +109,31 @@ export class Junction {
     };
   }
 
-  _mkTrafficLight(x, y) {
+  _mkTrafficLight(x, y, dir) {
     const el = this.ui.addDiv("tl", { left: `${x}px`, top: `${y}px` });
     el.innerHTML = `
       <div class="bulb red"></div>
       <div class="bulb yellow"></div>
       <div class="bulb green"></div>
     `;
+    
+    // Store tooltip update interval ID on the element
+    el._tooltipUpdateInterval = null;
+    
+    // Add hover event listeners
+    el.addEventListener('mouseenter', () => this._showTooltip(el, dir));
+    el.addEventListener('mouseleave', () => this._hideTooltip(el));
+    
     return el;
   }
 
   _createLights() {
     const b = this.box;
     return {
-      N: this._mkTrafficLight(b.cx - 10, b.innerTop - 40),
-      S: this._mkTrafficLight(b.cx - 10, b.innerBottom + 8),
-      W: this._mkTrafficLight(b.innerLeft - 30, b.cy - 22),
-      E: this._mkTrafficLight(b.innerRight + 10, b.cy - 22),
+      N: this._mkTrafficLight(b.cx - 10, b.innerTop - 40, 'N'),
+      S: this._mkTrafficLight(b.cx - 10, b.innerBottom + 8, 'S'),
+      W: this._mkTrafficLight(b.innerLeft - 30, b.cy - 22, 'W'),
+      E: this._mkTrafficLight(b.innerRight + 10, b.cy - 22, 'E'),
     };
   }
 
@@ -135,6 +144,12 @@ export class Junction {
   _toggleExit(dir) {
     this.exits[dir] = !this.exits[dir];
     this._renderExitButtons();
+    
+    // Mirror to the linked junction (right playground)
+    if (this.mirrorJunction) {
+      this.mirrorJunction.exits[dir] = this.exits[dir];
+      this.mirrorJunction._renderExitButtons();
+    }
   }
 
   _mkExitBtn(left, top, dir) {
@@ -180,6 +195,82 @@ export class Junction {
       btn.style.color = "#fff";
       btn.style.opacity = on ? "1" : "0.55";
       btn.textContent = on ? `Exit ✓` : "Exit";
+    }
+  }
+
+  _showTooltip(el, dir) {
+    // Get the traffic light info panel
+    const infoPanel = document.getElementById('trafficLightInfo');
+    const infoContent = document.getElementById('tlInfoContent');
+    
+    if (!infoPanel || !infoContent) return;
+    
+    // Show the panel
+    infoPanel.style.display = 'block';
+    
+    // Update the content
+    const updateContent = () => {
+      const signal = this.signal;
+      const phase = signal.phase;
+      const greenMs = (signal.GREEN_MS / 1000).toFixed(1);
+      const yellowMs = (signal.YELLOW_MS / 1000).toFixed(1);
+      const allRedMs = (signal.ALLRED_MS / 1000).toFixed(1);
+      const cycleMs = ((signal.GREEN_MS * 2) + (signal.YELLOW_MS * 2) + (signal.ALLRED_MS * 2)) / 1000;
+      
+      // Determine current light status for this direction
+      const axis = (dir === 'N' || dir === 'S') ? 'V' : 'H';
+      const isEW = axis === 'H';
+      const currentColor = isEW 
+        ? (phase === 'EW_GREEN' ? 'GREEN' : phase === 'EW_YELLOW' ? 'YELLOW' : 'RED')
+        : (phase === 'NS_GREEN' ? 'GREEN' : phase === 'NS_YELLOW' ? 'YELLOW' : 'RED');
+      
+      const timeRemaining = (signal._remainingMs / 1000).toFixed(1);
+      
+      infoContent.innerHTML = `
+        <strong>Junction ${this.id} - Direction ${dir}</strong><br>
+        <span style="
+          color: ${currentColor === 'GREEN' ? '#2e7d32' : currentColor === 'YELLOW' ? '#f57c00' : '#c62828'}; 
+          font-weight: 700;
+          font-size: 18px;
+          display: inline-block;
+          margin: 6px 0;
+        ">
+          ● ${currentColor} - ${timeRemaining}s remaining
+        </span><br>
+        <div style="display: flex; gap: 16px; margin-top: 10px; font-size: 14px; font-weight: 600;">
+          <span style="color: #2e7d32;">🟢 Green: ${greenMs}s</span>
+          <span style="color: #f57c00;">🟡 Yellow: ${yellowMs}s</span>
+          <span style="color: #c62828;">🔴 All-Red: ${allRedMs}s</span>
+          <span style="color: #1976d2;">⏱️ Cycle: ${cycleMs.toFixed(1)}s</span>
+        </div>
+      `;
+    };
+    
+    // Initial update
+    updateContent();
+    
+    // Clear any existing interval
+    if (el._tooltipUpdateInterval) {
+      clearInterval(el._tooltipUpdateInterval);
+    }
+    
+    // Set up live updates every 100ms
+    el._tooltipUpdateInterval = setInterval(() => {
+      updateContent();
+    }, 100);
+  }
+  
+  _hideTooltip(el) {
+    // Hide the traffic light info panel
+    const infoPanel = document.getElementById('trafficLightInfo');
+    if (infoPanel) {
+      infoPanel.style.display = 'none';
+    }
+    
+    // Clear the update interval
+    if (el._tooltipUpdateInterval) {
+      clearInterval(el._tooltipUpdateInterval);
+      el._tooltipUpdateInterval = null;
     }
   }
 

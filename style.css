@@ -34,6 +34,27 @@ body {
   touch-action: none;
 }
 
+.playgroundLabel {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1px solid #999;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: bold;
+  color: #333;
+  z-index: 1000;
+  pointer-events: none;
+}
+
+.playgroundLabel.optimized {
+  background: rgba(76, 175, 80, 0.9);
+  color: white;
+  border-color: #4caf50;
+}
+
 .workspace.panning {
   cursor: grabbing;
 }
@@ -139,6 +160,65 @@ body {
   border-radius: 5px;
   z-index: 7;
   box-shadow: 0 2px 3px rgba(0,0,0,0.25);
+  cursor: pointer;
+  transition: transform 0.1s;
+}
+
+.tl:hover {
+  transform: scale(1.1);
+}
+
+/* Traffic light tooltip */
+.tl-tooltip {
+  display: none;
+  position: fixed;
+  left: 30px;
+  top: -10px;
+  background: rgba(40, 40, 40, 0.95);
+  color: white;
+  padding: 10px 12px;
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 1.5;
+  white-space: nowrap;
+  z-index: 99999;
+  pointer-events: none;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+  border: 1px solid rgba(255,255,255,0.2);
+}
+
+.tl-info {
+  text-align: left;
+}
+
+.tl-info strong {
+  color: #ffeb3b;
+  font-size: 12px;
+}
+
+.tl-info hr {
+  border: none;
+  border-top: 1px solid rgba(255,255,255,0.2);
+  margin: 6px 0;
+}
+
+.tl-status {
+  display: inline-block;
+  font-weight: bold;
+  font-size: 12px;
+  padding: 2px 0;
+}
+
+.tl-status.green {
+  color: #4aff7a;
+}
+
+.tl-status.yellow {
+  color: #ffd34a;
+}
+
+.tl-status.red {
+  color: #ff4a4a;
 }
 
 /* Old light bulbs */
@@ -192,6 +272,34 @@ body {
 
 /* Stats */
 
+/* Optimization status bar */
+.optStatus {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  padding: 8px 16px;
+  background: #f5f5f5;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  margin-bottom: 12px;
+  font-size: 13px;
+}
+
+.optLabel {
+  font-weight: bold;
+  color: #333;
+}
+
+.optStat {
+  color: #666;
+}
+
+.btn.active {
+  background: #2e7d32;
+  color: white;
+  border-color: #2e7d32;
+}
+
 /* Row that holds the three stats panels */
 .statsRow {
   display: flex;
@@ -199,6 +307,23 @@ body {
   align-items: flex-start;
   margin-bottom: 14px;
   flex-wrap: nowrap;
+}
+
+.statsHeader {
+  width: 100%;
+  padding: 8px 12px;
+  font-weight: bold;
+  font-size: 14px;
+  background: #e0e0e0;
+  border-bottom: 2px solid #bbb;
+  text-align: center;
+  color: #333;
+}
+
+.statsHeader.optimized {
+  background: #4caf50;
+  color: white;
+  border-bottom-color: #388e3c;
 }
 
 /* Each stats panel: allow cards to wrap inside the panel */
@@ -221,6 +346,55 @@ body {
   border-radius: 6px;
   border: 1px solid rgba(0,0,0,0.06);
   box-shadow: 0 1px 1px rgba(0,0,0,0.03);
+  transition: background-color 0.3s, border-color 0.3s;
+}
+
+.statCard.trafficLightInfo {
+  flex: 1 1 100%;
+  background: linear-gradient(135deg, #fff9e6 0%, #fffbf0 100%);
+  border: 3px solid #ffc107;
+  box-shadow: 0 4px 12px rgba(255, 193, 7, 0.4);
+  min-height: 80px;
+  padding: 14px 16px;
+}
+
+.statCard.trafficLightInfo .k {
+  font-size: 15px;
+  font-weight: bold;
+  color: #f57c00;
+  margin-bottom: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.statCard.trafficLightInfo .v {
+  font-size: 15px;
+  line-height: 1.8;
+  font-weight: 500;
+  color: #333;
+}
+
+.statCard.trafficLightInfo .v strong {
+  font-size: 16px;
+  color: #000;
+  font-weight: 700;
+}
+
+.statCard.trafficLightInfo .v small {
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.statCard.improved {
+  background: #e8f5e9;
+  border-color: #4caf50;
+  box-shadow: 0 2px 4px rgba(76, 175, 80, 0.2);
+}
+
+.statCard.worsened {
+  background: #ffebee;
+  border-color: #f44336;
+  box-shadow: 0 2px 4px rgba(244, 67, 54, 0.2);
 }
 
 .statCard .k {

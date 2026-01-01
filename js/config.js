@@ -14,9 +14,9 @@ export const CFG = Object.freeze({
 
   STOPLINE_THICK: 2,
 
-  GREEN_MS: 3000,
-  YELLOW_MS: 400,
-  ALLRED_MS: 3000,
+  GREEN_MS: 30000,
+  YELLOW_MS: 4500,
+  ALLRED_MS: 2000,
 
   SPAWN_COOLDOWN_MS: 1000,
 

@@ -2,6 +2,13 @@ export class SignalController {
   constructor(cfg) {
     this.cfg = cfg;
 
+    // Mutable timing properties (can be updated by optimizer)
+    // Initialize from cfg but store separately to allow modification
+    // Calculate adaptive yellow time based on car speed and intersection
+    this.GREEN_MS = cfg.GREEN_MS || 45000; // 45 seconds
+    this.YELLOW_MS = this._calculateYellowTime(cfg); // Adaptive yellow time (3-6s)
+    this.ALLRED_MS = cfg.ALLRED_MS || 2000; // 2 seconds
+
     // Keep phase names stable for the rest of the codebase.
     this.phase = "EW_GREEN";
 
@@ -17,6 +24,43 @@ export class SignalController {
 
   onChange(fn) {
     this._listeners.add(fn);
+  }
+
+  /**
+   * Calculate optimal yellow light duration based on car speed and intersection width
+   * Uses standard traffic engineering formula:
+   * Yellow = perception_time + (speed / 2*deceleration) + (clearance_distance / speed)
+   * 
+   * @param {Object} cfg - Configuration object
+   * @returns {number} - Yellow time in milliseconds
+   */
+  _calculateYellowTime(cfg) {
+    const carSpeed = cfg.CAR_SPEED || 1.4; // pixels per frame (16.67ms)
+    const junctionSize = cfg.JUNC_SIZE || 110; // pixels
+    const roadThick = cfg.ROAD_THICK || 120; // pixels
+    
+    // Convert car speed to pixels per second (assuming 60fps)
+    const speedPxPerSec = carSpeed * 60; // ~84 px/s at default speed
+    
+    // Perception-reaction time (human standard: ~1.5 seconds)
+    const perceptionTime = 1.5; // seconds
+    
+    // Deceleration distance: time to comfortably stop
+    // Assume comfortable deceleration of ~3 m/s² (using pixel scale)
+    const decelTime = speedPxPerSec / (3 * 10); // simplified deceleration time (~2.8s)
+    
+    // Clearance time: time to cross intersection from stop line
+    // Distance = half junction + road thickness (to clear the intersection)
+    const clearanceDistance = (junctionSize / 2) + (roadThick / 2);
+    const clearanceTime = clearanceDistance / speedPxPerSec; // ~2.4 seconds
+    
+    // Total yellow time = max of (stop time, clearance time) + perception time
+    const yellowTimeSec = perceptionTime + Math.max(decelTime, clearanceTime);
+    
+    // Convert to milliseconds and ensure minimum 3 seconds for safety
+    const yellowTimeMs = Math.max(3000, Math.round(yellowTimeSec * 1000));
+    
+    return yellowTimeMs;
   }
 
   _emit() {
@@ -43,9 +87,9 @@ export class SignalController {
   }
 
   _durFor(phase) {
-    if (phase === "EW_GREEN" || phase === "NS_GREEN") return this.cfg.GREEN_MS;
-    if (phase === "EW_YELLOW" || phase === "NS_YELLOW") return this.cfg.YELLOW_MS;
-    return this.cfg.ALLRED_MS; // ALL_RED
+    if (phase === "EW_GREEN" || phase === "NS_GREEN") return this.GREEN_MS;
+    if (phase === "EW_YELLOW" || phase === "NS_YELLOW") return this.YELLOW_MS;
+    return this.ALLRED_MS; // ALL_RED
   }
 
   _advancePhase() {
