@@ -1,13 +1,13 @@
+<!-- ...existing code... -->
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Traffic Network Grid Builder</title>
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
-
   <h1 class="title">Traffic Network Grid Builder</h1>
 
   <div class="controls">
@@ -37,97 +37,199 @@
       <input id="colsInput" class="num" type="number" min="1" max="10" value="2" />
       <button id="buildGridBtn" class="btn secondary">Build</button>
     </div>
+
+    <div class="pill">
+      <span class="pillLabel">Junction API</span>
+      <input id="junctionApiUrl" type="text" placeholder="/api/junction" value="/api/junction" />
+      <button id="startJunctionSyncBtn" class="btn secondary">Start Sync</button>
+    </div>
+
+    <div class="pill">
+      <span class="pillLabel">Optimization</span>
+      <button id="toggleOptimizationBtn" class="btn secondary">Enable (Right)</button>
+    </div>
   </div>
 
-  <!-- Stats -->
-   <div class="stats">  
+  <!-- Optimization Status Bar -->
+  <div id="optimizationStatus" class="optStatus" style="display: none;">
+    <span class="optLabel">🔄 Optimization:</span>
+    <span id="optStatusText">Waiting...</span>
+    <span class="optStat">Total: <span id="optTotal">0</span></span>
+    <span class="optStat">Success: <span id="optSuccess">0</span></span>
+    <span class="optStat">Saved: <span id="optSaved">0</span> g CO₂</span>
+  </div>
+
+  <!-- Stats panels: config, top playground, bottom playground (side-by-side) -->
+  <div class="statsRow">
     <!-- Config constants used in stats -->
-    <div class="statCard">
-      <div class="k">PX / m</div>
-      <div class="v" id="statPxPerM">10</div>
+    <div class="stats statsConfig">
+      <div class="statCard">
+        <div class="k">PX / m</div>
+        <div class="v" id="statPxPerM">10</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">CO₂ / km</div>
+        <div class="v" id="statCo2PerKm">249 g/km</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Idle fuel</div>
+        <div class="v" id="statIdleGalPerHr">0.35 gal/hr</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">CO₂ / gal</div>
+        <div class="v" id="statCo2GPerGal">8887 g/gal</div>
+      </div>
+      
+      <!-- Traffic Light Info Panel -->
+      <div class="statCard trafficLightInfo" id="trafficLightInfo" style="display: none;">
+        <div class="k">🚦 Traffic Light Info</div>
+        <div class="v" id="tlInfoContent">Hover over a traffic light</div>
+      </div>
     </div>
 
-    <div class="statCard">
-      <div class="k">CO₂ / km</div>
-      <div class="v" id="statCo2PerKm">249 g/km</div>
+    <!-- Left playground stats (Control) -->
+    <div class="stats" id="statsTop">
+      <div class="statsHeader">📊 Control Playground</div>
+      <div class="statCard">
+        <div class="k">Cars in playground</div>
+        <div class="v" id="statCarCount">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Total spawned</div>
+        <div class="v" id="statTotalSpawned">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Completed trips</div>
+        <div class="v" id="statCompleted">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Trips in last hour</div>
+        <div class="v" id="statThroughput">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg trip time</div>
+        <div class="v" id="statAvgTripTime">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg idle time</div>
+        <div class="v" id="statAvgIdleTime">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Stopped time %</div>
+        <div class="v" id="statStopPct">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg speed (per car, overall)</div>
+        <div class="v" id="statAvgSpeedNow">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Total distance</div>
+        <div class="v" id="statTotalDistance">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">CO₂ rate</div>
+        <div class="v" id="statCo2PerMin">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Total CO₂</div>
+        <div class="v" id="statCo2Total">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg CO₂ / trip</div>
+        <div class="v" id="statAvgCo2Trip">-</div>
+      </div>
     </div>
 
-    <div class="statCard">
-      <div class="k">Idle fuel</div>
-      <div class="v" id="statIdleGalPerHr">0.35 gal/hr</div>
-    </div>
+    <!-- Right playground stats (Optimized) -->
+    <div class="stats" id="statsBottom">
+      <div class="statsHeader optimized">🚦 Optimized Playground</div>
+      <div class="statCard">
+        <div class="k">Cars in playground</div>
+        <div class="v" id="statCarCount2">0</div>
+      </div>
 
-    <div class="statCard">
-      <div class="k">CO₂ / gal</div>
-      <div class="v" id="statCo2GPerGal">8887 g/gal</div>
+      <div class="statCard">
+        <div class="k">Total spawned</div>
+        <div class="v" id="statTotalSpawned2">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Completed trips</div>
+        <div class="v" id="statCompleted2">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Trips in last hour</div>
+        <div class="v" id="statThroughput2">0</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg trip time</div>
+        <div class="v" id="statAvgTripTime2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg idle time</div>
+        <div class="v" id="statAvgIdleTime2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Stopped time %</div>
+        <div class="v" id="statStopPct2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg speed (per car, overall)</div>
+        <div class="v" id="statAvgSpeedNow2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Total distance</div>
+        <div class="v" id="statTotalDistance2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">CO₂ rate</div>
+        <div class="v" id="statCo2PerMin2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Total CO₂</div>
+        <div class="v" id="statCo2Total2">-</div>
+      </div>
+
+      <div class="statCard">
+        <div class="k">Avg CO₂ / trip</div>
+        <div class="v" id="statAvgCo2Trip2">-</div>
+      </div>
     </div>
   </div>
 
-  <div class="stats">
-    <div class="statCard">
-      <div class="k">Cars in playground</div>
-      <div class="v" id="statCarCount">0</div>
+  <!-- Playgrounds: show left (control) and right (optimized) side-by-side -->
+  <div class="workspaces">
+    <div class="workspace">
+      <div class="playgroundLabel">Control (No Optimization)</div>
+      <div id="world"></div>
     </div>
 
-    <div class="statCard">
-      <div class="k">Total spawned</div>
-      <div class="v" id="statTotalSpawned">0</div>
+    <div class="workspace">
+      <div class="playgroundLabel optimized">Optimized (Adaptive Signals)</div>
+      <div id="world2"></div>
     </div>
-
-    <div class="statCard">
-      <div class="k">Completed trips</div>
-      <div class="v" id="statCompleted">0</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Trips in last hour</div>
-      <div class="v" id="statThroughput">0</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Avg trip time</div>
-      <div class="v" id="statAvgTripTime">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Avg idle time</div>
-      <div class="v" id="statAvgIdleTime">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Stopped time %</div>
-      <div class="v" id="statStopPct">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Avg speed (per car, overall)</div>
-      <div class="v" id="statAvgSpeedNow">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Total distance</div>
-      <div class="v" id="statTotalDistance">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">CO₂ rate</div>
-      <div class="v" id="statCo2PerMin">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Total CO₂</div>
-      <div class="v" id="statCo2Total">-</div>
-    </div>
-
-    <div class="statCard">
-      <div class="k">Avg CO₂ / trip</div>
-      <div class="v" id="statAvgCo2Trip">-</div>
-    </div>
-  </div>
-
-  <!-- Playground -->
-  <div class="workspace">
-    <div id="world"></div>
   </div>
 
   <script type="module" src="js/app.js"></script>

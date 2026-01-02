@@ -1,0 +1,28 @@
+@startuml
+title OptimizeTiming - Signal Timing Optimization
+
+start
+
+:Receive current signal timing plan;
+:Receive traffic state metrics;
+:Receive energy cost parameters;
+
+:Identify priority approaches\n(queue length, waiting time);
+
+:Adjust green time durations\n(bounded increase/decrease);
+
+:Evaluate need for phase reordering;
+if (Switching benefit > switching cost?) then (Yes)
+    :Reorder signal phases;
+else (No)
+    :Keep existing phase order;
+endif
+
+:Generate candidate timing plans;
+
+:Evaluate energy-aware cost\nfor each candidate plan;
+
+:Select timing plan with\nminimum total cost;
+
+stop
+@enduml

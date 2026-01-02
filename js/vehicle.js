@@ -105,6 +105,61 @@ export class Vehicle {
     this.el.classList.toggle("v", axis === "V");
   }
 
+  /**
+   * Check if there's sufficient space in the downstream lane after crossing this junction
+   * @param {string} targetJunctionId - Junction about to cross
+   * @param {string} axis - Movement axis (H or V)
+   * @param {number} sign - Movement direction sign
+   * @returns {boolean} - True if safe to proceed, false if lane is congested
+   */
+  _hasSpaceDownstream(targetJunctionId, axis, sign) {
+    // Find the next waypoint after the junction
+    const nextWpIdx = this.wpIdx + 2; // +1 is junction entry, +2 is after junction
+    if (nextWpIdx >= this.waypoints.length) return true; // At end of route, always proceed
+
+    const nextWaypoint = this.waypoints[nextWpIdx];
+    const junction = this.world.junctions.get(targetJunctionId);
+    if (!junction) return true;
+
+    // Define the downstream lane area to check
+    const checkDistance = 150; // Check 150px ahead (about 5-6 car lengths)
+    const laneTolerance = 35; // Lane width tolerance
+    
+    // Determine the downstream lane coordinate
+    const laneCoord = axis === "H" ? nextWaypoint.y : nextWaypoint.x;
+    
+    // Count vehicles in the downstream lane segment
+    let vehiclesInLane = 0;
+    const maxVehiclesAllowed = 4; // Allow max 4 vehicles in the checked segment
+    
+    for (const v of this.world.vehicles) {
+      if (v === this || !v.plan || v.plan.done) continue;
+      
+      // Check if vehicle is in the same lane
+      const vLaneCoord = axis === "H" ? v.y : v.x;
+      const vPosition = axis === "H" ? v.x : v.y;
+      const myPosition = axis === "H" ? this.x : this.y;
+      
+      const onSameLane = Math.abs(vLaneCoord - laneCoord) < laneTolerance;
+      if (!onSameLane) continue;
+      
+      // Check if vehicle is ahead in the downstream direction
+      const isAhead = sign > 0 ? (vPosition > myPosition && vPosition < myPosition + checkDistance) :
+                               (vPosition < myPosition && vPosition > myPosition - checkDistance);
+      
+      if (isAhead) {
+        vehiclesInLane++;
+        if (vehiclesInLane >= maxVehiclesAllowed) {
+          return false; // Lane is too congested
+        }
+      }
+    }
+    
+    return true; // Safe to proceed
+  }
+
+
+
   planStep(dt) {
     if (this.wpIdx >= this.waypoints.length - 1) {
       this.plan = { done: true };
@@ -128,6 +183,7 @@ export class Vehicle {
     let ny = this.y + (axis === "V" ? sign * step : 0);
 
     let blockedAtStop = false;
+    let blockedByDownstreamCongestion = false;
 
     // Stop only at entry waypoint (junctionId != null)
     const targetJunctionId = p1.junctionId;
@@ -136,21 +192,26 @@ export class Vehicle {
       const stop = axis === "H" ? p1.x : p1.y;
       const green = j.signal.isGreen(axis);
 
-      // must stop before stop line if not green (yellow/red/all-red)
-      if (this.committedJunction !== targetJunctionId && !green) {
+      // Check if downstream lane has space even if light is green
+      const hasDownstreamSpace = this._hasSpaceDownstream(targetJunctionId, axis, sign);
+
+      // Stop if: (1) not already committed AND (2) light is not green OR downstream is blocked
+      if (this.committedJunction !== targetJunctionId && (!green || !hasDownstreamSpace)) {
         if (axis === "H") {
           const front = sign > 0 ? (nx + this.len) : nx;
           const wouldCross = sign > 0 ? (front >= stop) : (front <= stop);
           if (wouldCross) {
             nx = sign > 0 ? (stop - this.len) : stop;
-            blockedAtStop = true;
+            blockedAtStop = !green;
+            blockedByDownstreamCongestion = green && !hasDownstreamSpace;
           }
         } else {
           const front = sign > 0 ? (ny + this.len) : ny;
           const wouldCross = sign > 0 ? (front >= stop) : (front <= stop);
           if (wouldCross) {
             ny = sign > 0 ? (stop - this.len) : stop;
-            blockedAtStop = true;
+            blockedAtStop = !green;
+            blockedByDownstreamCongestion = green && !hasDownstreamSpace;
           }
         }
       }
@@ -180,6 +241,7 @@ export class Vehicle {
       nx,
       ny,
       blockedAtStop,
+      blockedByDownstreamCongestion,
       blockedByLeader: false,
     };
   }
@@ -187,13 +249,13 @@ export class Vehicle {
   applyStep() {
     if (!this.plan || this.plan.done) return;
 
-    const { axis, sign, p1, blockedAtStop, blockedByLeader } = this.plan;
+    const { axis, sign, p1, blockedAtStop, blockedByDownstreamCongestion, blockedByLeader } = this.plan;
 
     this.x = this.plan.nx;
     this.y = this.plan.ny;
 
-    // If clamped at red/yellow OR behind a leader, do NOT advance waypoint
-    if (!blockedAtStop && !blockedByLeader) {
+    // If clamped at red/yellow OR behind a leader OR blocked by downstream congestion, do NOT advance waypoint
+    if (!blockedAtStop && !blockedByLeader && !blockedByDownstreamCongestion) {
       if (axis === "H") {
         if ((sign > 0 && this.x >= p1.x) || (sign < 0 && this.x <= p1.x)) this.wpIdx++;
       } else {

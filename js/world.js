@@ -3,20 +3,54 @@ import { Router } from "./router.js";
 import { Junction } from "./junction.js";
 import { Vehicle } from "./vehicle.js";
 import { keyRC, DIRS, oppositeDir } from "./utils.js";
+import { SignalOptimizer } from "./SignalOptimizer.js";
 
 export class World {
-  constructor({ cfg, ui, rows, cols, worldEl }) {
+  constructor({ cfg, ui, rows, cols, worldEl, enableOptimization = false, isRightPlayground = false, mirrorWorld = null }) {
     this.cfg = cfg;
     this.ui = ui;
     this.rows = rows;
     this.cols = cols;
     this.worldEl = worldEl;
+    this.isRightPlayground = isRightPlayground;
+    this.mirrorWorld = mirrorWorld;
 
     this.geom = new GridGeometry(cfg, rows, cols);
 
     this.junctions = new Map();
     this.vehicles = new Set();
     this.router = new Router(this);
+    
+    // Initialize signal optimizer
+    this.signalOptimizer = new SignalOptimizer({
+      enabled: enableOptimization,
+      optimizationInterval: 60, // seconds
+      evaluationConfig: {
+        queueLengthThreshold: 5,
+        waitingTimeLimit: 30,
+        laneImbalanceThreshold: 0.5,
+        reoptimizationInterval: 120
+      },
+      timingConfig: {
+        minGreenTime: 10,
+        maxGreenTime: 60,
+        greenTimeStep: 5,
+        minCycleTime: 40,
+        maxCycleTime: 150,
+        yellowTime: 4,
+        allRedTime: 2
+      },
+      validationConfig: {
+        minGreenTime: 7,
+        maxGreenTime: 90,
+        minYellowTime: 3,
+        maxYellowTime: 6,
+        minAllRedTime: 1,
+        maxAllRedTime: 5,
+        minCycleTime: 30,
+        maxCycleTime: 180
+      }
+    });
 
     this._roadEls = new Map();
     this._cellEls = new Map();
@@ -96,8 +130,13 @@ export class World {
 
         const btn = document.createElement("button");
         btn.className = "cellBtn";
-        btn.textContent = "+ Add Junction";
+        btn.textContent = this.isRightPlayground ? "Mirrored from Left" : "+ Add Junction";
         btn.onclick = () => this.addJunction(r, c);
+        if (this.isRightPlayground) {
+          btn.disabled = true;
+          btn.style.cursor = "not-allowed";
+          btn.style.opacity = "0.5";
+        }
 
         cell.appendChild(btn);
         this._cellEls.set(keyRC(r, c), cell);
@@ -112,8 +151,14 @@ export class World {
     if (!btn) return;
 
     const exists = this.junctions.has(keyRC(r, c));
-    btn.disabled = exists;
-    btn.textContent = exists ? "Junction Added ✅" : "+ Add Junction";
+    btn.disabled = exists || this.isRightPlayground;
+    if (this.isRightPlayground) {
+      btn.textContent = exists ? "Junction Added ✅" : "Mirrored from Left";
+      btn.style.cursor = "not-allowed";
+      btn.style.opacity = "0.5";
+    } else {
+      btn.textContent = exists ? "Junction Added ✅" : "+ Add Junction";
+    }
   }
 
   addJunction(r, c) {
@@ -125,6 +170,23 @@ export class World {
 
     this._updateCellButtonState(r, c);
     this._refreshRoads();
+
+    // Mirror to right playground if this is the left playground
+    if (!this.isRightPlayground && this.mirrorWorld) {
+      const mirrorId = keyRC(r, c);
+      const existingMirrorJunction = this.mirrorWorld.junctions.get(mirrorId);
+      
+      if (!existingMirrorJunction) {
+        // Create new mirrored junction
+        const mirrorJ = new Junction({ cfg: this.mirrorWorld.cfg, ui: this.mirrorWorld.ui, geom: this.mirrorWorld.geom, r, c });
+        this.mirrorWorld.junctions.set(mirrorId, mirrorJ);
+        this.mirrorWorld._updateCellButtonState(r, c);
+        this.mirrorWorld._refreshRoads();
+        
+        // Link junctions for Exit button mirroring
+        j.mirrorJunction = mirrorJ;
+      }
+    }
   }
 
   _refreshRoads() {
@@ -207,6 +269,17 @@ export class World {
     return dirs;
   }
 
+  _hasAnyExitEnabled() {
+    for (const junction of this.junctions.values()) {
+      if (junction.exits) {
+        for (const dir of ["N", "S", "E", "W"]) {
+          if (junction.exits[dir]) return true;
+        }
+      }
+    }
+    return false;
+  }
+
   _randomChoice(arr) {
     return arr[Math.floor(Math.random() * arr.length)];
   }
@@ -214,6 +287,9 @@ export class World {
   _buildRandomTurnRoute() {
     const ids = [...this.junctions.keys()];
     if (ids.length === 0) return null;
+
+    // Check if any Exit buttons are enabled across all junctions
+    const anyExitEnabled = this._hasAnyExitEnabled();
 
     // Boundary junctions that can spawn from outside + have at least one connected road
     const boundary = ids.filter(id =>
@@ -239,11 +315,23 @@ export class World {
     for (let tries = 0; tries < 20; tries++) {
       startId = this._randomChoice(boundary);
       endId = this._randomChoice(boundary);
+      
       if (boundary.length > 1 && endId === startId) continue;
 
       // ✅ router.js provides bfsPath
       path = this.router.bfsPath(startId, endId);
-      if (path && path.length >= 1) break;
+      if (path && path.length >= 1) {
+        // If exit buttons are enabled, validate that end junction can exit properly
+        if (anyExitEnabled) {
+          const lastJunction = this.junctions.get(endId);
+          const possibleExitDirs = this._possibleEntryDirsFromOutside(endId);
+          const hasValidExit = possibleExitDirs.some(dir => lastJunction.isExitEnabled(dir));
+          
+          // If this end junction doesn't have a valid exit, try another route
+          if (!hasValidExit) continue;
+        }
+        break;
+      }
     }
 
     if (!path) return null;
@@ -260,8 +348,20 @@ export class World {
 
     // Force final move to exit outside from the last boundary junction
     const last = nodes[nodes.length - 1];
+    const lastJunction = this.junctions.get(last);
     const approachFromLast = nodes.length === 1 ? entryFrom : oppositeDir(moves[moves.length - 1]);
     let outsideDirs = this._possibleEntryDirsFromOutside(last);
+
+    // If any Exit button is enabled, only allow exit through enabled Exit lanes
+    if (anyExitEnabled) {
+      const enabledExitDirs = outsideDirs.filter(dir => lastJunction.isExitEnabled(dir));
+      if (enabledExitDirs.length > 0) {
+        outsideDirs = enabledExitDirs;
+      } else {
+        // This shouldn't happen if filtering above works correctly, but fallback
+        return null;
+      }
+    }
 
     // avoid U-turn if possible
     let candidates = outsideDirs.filter(d => d !== approachFromLast);
@@ -380,7 +480,7 @@ export class World {
     this.stats.completionTimestamps.push(this.simTimeMs);
 
     // debug: log completion recording
-    try { console.debug("[world] completion recorded", { simTimeMs: this.simTimeMs, totalCompleted: this.stats.totalCompleted, timestamps: this.stats.completionTimestamps.length }); } catch (e) {}
+    //try { console.debug("[world] completion recorded", { simTimeMs: this.simTimeMs, totalCompleted: this.stats.totalCompleted, timestamps: this.stats.completionTimestamps.length }); } catch (e) {}
 
     if (!meta) return;
 
@@ -400,7 +500,7 @@ export class World {
     const currentThroughputPerHour = completionsWindow; // raw count of trips in the last hour
 
     // debug: log snapshot throughput and timestamp count
-    try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
+    //try { console.debug("[world] snapshot", { now, windowMs, completionsWindow, currentThroughputPerHour, timestampsLen: (this.stats.completionTimestamps || []).length }); } catch (e) {}
 
     return {
       simTimeMs: this.simTimeMs,
@@ -416,6 +516,23 @@ export class World {
 
     // track sim time
     this.simTimeMs += simDeltaMs;
+    
+    // Run signal optimization if enabled (uses simulation time in seconds)
+    // Optimization runs asynchronously without blocking the simulation
+    if (this.signalOptimizer && this.signalOptimizer.enabled) {
+      this.signalOptimizer.tick(this, this.simTimeMs / 1000).then(optResult => {
+        if (optResult && optResult.junctionResults) {
+          // Log successful optimizations
+          optResult.junctionResults.forEach(result => {
+            if (result.deployed) {
+              console.log('[Optimization]', result.junctionId, result.reason, 'Energy saved:', result.optimization?.improvement?.toFixed(2) || 0, 'g CO₂');
+            }
+          });
+        }
+      }).catch(err => {
+        console.error('[Optimization Error]', err);
+      });
+    }
 
     for (const j of this.junctions.values()) {
       j.signal.update(simDeltaMs);

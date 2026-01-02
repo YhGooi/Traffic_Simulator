@@ -1,0 +1,37 @@
+@startuml
+title EvaluateOptimization - Optimization Trigger Evaluation
+
+start
+
+:Receive current traffic state;
+:Receive current signal state;
+
+:Check queue length threshold;
+if (Queue length > threshold?) then (Yes)
+    :Optimization required;
+    stop
+endif
+
+:Check waiting time threshold;
+if (Waiting time > limit?) then (Yes)
+    :Optimization required;
+    stop
+endif
+
+:Check lane imbalance;
+if (Lane imbalance detected?) then (Yes)
+    :Optimization required;
+    stop
+endif
+
+:Check time window expiration;
+if (Re-optimization interval elapsed?) then (Yes)
+    :Optimization required;
+    stop
+endif
+
+:No significant change detected;
+:Maintain current signal timing;
+
+stop
+@enduml

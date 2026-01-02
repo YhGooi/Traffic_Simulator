@@ -1,0 +1,40 @@
+@startuml
+title SafetyValidation - Vehicle Signal Safety Enforcement (Pedestrian Excluded)
+
+start
+
+:Receive optimized phase-based timing plan;
+
+:Validate minimum and maximum\nphase durations;
+if (Phase duration valid?) then (Yes)
+else (No)
+    :Reject timing plan;
+    stop
+endif
+
+:Check phase compatibility\n(no conflicting green movements);
+if (No conflicts detected?) then (Yes)
+else (No)
+    :Reject timing plan;
+    stop
+endif
+
+:Validate yellow and all-red\nclearance intervals;
+if (Clearance intervals valid?) then (Yes)
+else (No)
+    :Reject timing plan;
+    stop
+endif
+
+:Validate total cycle time\nwithin configured bounds;
+if (Cycle time valid?) then (Yes)
+else (No)
+    :Reject timing plan;
+    stop
+endif
+
+:Approve timing plan;
+:Forward to deployment stage;
+
+stop
+@enduml
